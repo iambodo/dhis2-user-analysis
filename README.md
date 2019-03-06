@@ -25,5 +25,9 @@ NB: This is my first RMarkdown project, so the code is inelegant and likely inef
 Possible improvements:
 -Analysis by day of the week
 -User-level data on tracked entity attribute and enrollments
--Combining with user-level interpretations and aggregate dataset interactions 
+-Combining with user-level interpretations and aggregate dataset interactions
+-Extracting teidva data on "sessions", or time to complete stage by each user
+-Create new sub-directories for analysis date, user graphics, and user group graphics, for better file structure.
 
+Example graphics below.
+[[https://github.com/iambodo/repository/dhis2-user-analysis/blob/master/example_graphics.JPG|alt=octocat]]
