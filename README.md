@@ -7,7 +7,7 @@ DHIS2 analytics therefore assumes that one user is active per organization unit.
 
 However, DHIS2 keeps a log of every entry of a data element into a tracker program at the */trackedentitydatavalueaudit* API endpoint, including username and timestamp, making it possible to analyze tracker data entry at the **user level**.
 
-After you enter database and credential details, the routine checks if a SQL view based on "trackedentitydatavalueaudit" table is in the database. If not, it POSTS and executes the SQL view.
+After you enter database and (admin) credential details, the routine checks if a SQL view based on "trackedentitydatavalueaudit" table is in the database. If not, it POSTS and executes the SQL view.
 
 The next routine pulls data from the SQL view and performs various analysis routines:
 --Total users with accounts, users with activity, users who entered tracker data
