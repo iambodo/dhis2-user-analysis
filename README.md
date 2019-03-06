@@ -30,4 +30,4 @@ Possible improvements:
 -Create new sub-directories for analysis date, user graphics, and user group graphics, for better file structure.
 
 Example graphics below.
-[[https://github.com/iambodo/repository/dhis2-user-analysis/blob/master/example_graphics.JPG|alt=octocat]]
+![alt examples](https://raw.githubusercontent.com/iambodo/repository/dhis2-user-analysis/blob/master/example_graphics.JPG)
