@@ -83,7 +83,7 @@ Now pull data on user activity from TEI audit log and pull user info from API.
 
 ```{r pulldata, paged.print=TRUE}
 #now, search if this instance already has SQL views with this name
-viewName1 <- "test_user_data_withstartdate"
+viewName1 <- "user_data_withstartdate"
 url<-paste0(baseurl,"api/sqlViews.json?filter=name:$like:",viewName1)
 r<-httr::GET(url, httr::authenticate(username,password),httr::timeout(60))
 sql <- jsonlite::fromJSON(httr::content(r,as = "text"))
