@@ -7,13 +7,18 @@ knitr::opts_chunk$set(echo=FALSE, message=TRUE, warning=FALSE, paged.print=FALSE
 options(encoding = "UTF-8")
 
 #credentials and global variables (include last backslash)
-baseurl<-"https://play.dhis2.org/2.31.1/"
+baseurl<-"https://play.dhis2.org/2.31.3/"
 username<-"admin"
 password<-"district"
 
+#startdate in yyyy-mm-dd format
 startdate<- "2014-01-21"
 enddate<-""
 
+#workhour start and end in 24 hr format, no quotes
+workhour_start<-9
+workhour_end<-17
+  
 wd<-getwd()
 
 
@@ -89,7 +94,7 @@ r<-httr::GET(url, httr::authenticate(username,password),httr::timeout(60))
 sql <- jsonlite::fromJSON(httr::content(r,as = "text"))
 viewUID<-sql$sqlViews$id[1]
 if(is.null(viewUID)){
-  print("no SQL view with this name exists. Creating new SQL view.")
+  warning("no SQL view with this name exists. Creating new SQL view.")
   url<-paste0(baseurl,"api/27/metadata.json?importStrategy=CREATE")
   r<-POST(url, body=upload_file(paste0(wd, "/",viewName1,".json")))
   url<-paste0(baseurl,"api/sqlViews.json?filter=name:$like:",viewName1)
@@ -97,17 +102,19 @@ if(is.null(viewUID)){
   sql <- jsonlite::fromJSON(httr::content(r,as = "text"))
   viewUID<-sql$sqlViews$id[1]
 } else {
-  print(paste0("SQL view with this name already exists...",viewName1))
+  warning(paste0("SQL view with this name already exists...",viewName1))
 }
-file.exists(paste0(wd, "/",viewName1,".json"))
+
+if(!all(file.exists(paste0(wd, "/",viewName1,".json"))))
+  stop("no JSON file for SQL view import in your directory")
 
 #now execute the SQL view
 createsql<-paste0(baseurl,"api/26/sqlViews/",viewUID,"/execute")
 r<-httr::POST(createsql, httr::authenticate(username,password),httr::timeout(60))
 if(r$status_code == 200){
-  print(paste0("executing view.. ",viewName1))
+  warning(paste0("executing view.. ",viewName1))
 } else {
-  print(paste0("could not execute view ",viewName1))
+  warning(paste0("could not execute view ",viewName1))
 }
 
 #now pull the data through CSV
@@ -115,20 +122,17 @@ if(r$status_code == 200){
 require(readr)
 require(tibble)
 url<-paste0(baseurl,"api/sqlViews/",viewUID,"/data.csv?var=startdate:",startdate,"&var=enddate:",enddate)
-r<-httr::GET(url, httr::authenticate(username,password),httr::timeout(60),write_disk("response.txt",overwrite = TRUE))
-
-if(r$status_code == 200){
-  print("pulled TEI audit data to R")
-}
-
-mydata<-readr::read_delim("response.txt",delim=",", col_names = TRUE, col_types = "cdci")
+mydata<-read_csv(content(GET(url), as="text", col_names=TRUE))
 
 ##now pass data into dataframe and perform trimming functions
 df<-data.frame(mydata, row.names = NULL)
 df$stagename <-as.character(df$stagename)
 df$stagename<-gsub("_+$", "",df$stagename)
-print("First six stage names in TEI audit, listed alphabetically")
-head(unique(df$stagename))
+#debug 
+#print("First six stage names in TEI audit, listed alphabetically")
+#head(unique(df$stagename))
+
+
 total_users_auditted<-length(unique(df$user))
 
 ##get users full names and last logins, and user UIDs
@@ -141,9 +145,10 @@ lastLogin<-user_api2$userCredentials$lastLogin
 user_api2<-cbind(user_api2,usernames,lastLogin)
 
 #analyze data from users API
-print("Last 6 users who logged in to db")
+#print("Last 6 users who logged in to db")
 latest_users<-user_api2[order(user_api2$lastLogin, decreasing = TRUE),]
-head(na.omit(latest_users[,c(3,7)]))
+library(DT)
+DT::datatable(latest_users[,c(3,6,7)], caption = "All users by last login")
 
 total_users<-length(unique(user_api2$id))
 total_loggedin<-length(na.omit(user_api2$lastLogin))
@@ -152,23 +157,24 @@ users_general<-cbind(total_users, total_loggedin, total_users_auditted)
 barplot(users_general, ylab="Users", names.arg =c("total users", "who logged in", "who entered data"))
 ```
 
+
+
 The audit log shows **`r length(unique(df$stagename))`** unique program stages, entered by **`r length(unique(df$user))`** unique users.
 
 Overall, **`r total_users`** users have accounts, and **`r total_loggedin`** have logged in at least once.
 
 
-###Start Analysis
+###Start Analysis of Tracker Audits
 
-The five program stages with most user interactions are below.
+Program stages are listed below, by order of overall number of edits
 ```{r Top Stages, fig.height=3}
 
 #note: "interactions" abbreviated to "edits" in analysis code.
 
 cs<-as_data_frame(aggregate((df$edits), list(Stage = df$stagename), sum))
-most_common<-head(cs[order(cs$x, decreasing = TRUE),],5)
+most_common<-cs[order(cs$x, decreasing = TRUE),]
 names(most_common)[2]<-"Interactions"
-most_common<-tableGrob(most_common, theme =ttheme_minimal(padding=unit(rep(2,2),"mm")))
-gridExtra::grid.arrange(most_common, as.table=FALSE)
+datatable(most_common, caption="Stages with most interactions")
 ```
 
 This shows interactions by stage, for all users.
@@ -204,6 +210,8 @@ p1
 ub_agg1<- as_data_frame(aggregate(ub["edits"], by=ub["stagename"], sum))
 get_p1(ub_agg1)
 
+
+
 #plot 2: edits per hour of day for each stage for this user/userGroup
 get_p2<-function(ub_agg2){
  p2<- ggplot(data=ub_agg2, aes(x=hour, y=edits, fill=stagename)) +
@@ -211,8 +219,8 @@ get_p2<-function(ub_agg2){
   guides(fill=FALSE) +
   theme_bw() +
   theme(legend.position = "none") +
-  geom_vline(xintercept=7.5, size=1, color="firebrick") +
-  geom_vline(xintercept=16.5, size=1, color="firebrick") +
+  geom_vline(xintercept=workhour_start - 0.5, size=1, color="firebrick") +
+  geom_vline(xintercept=workhour_end, size=1, color="firebrick") +
   labs(y = "Interactions", x = "Hour of Day",
        title = paste0("interactions per hour"),
        subtitle = "colors repesent stages in plot above",
@@ -243,14 +251,14 @@ if (r$status_code != 200){
 usergroups1<-jsonlite::fromJSON(content(GET(url),"text"))
 require(plyr)
 usergroups2 <- ldply(usergroups1, data.frame)
-groups_auditted<-length(usergroups2$displayName)
+usergroups2$displayName<-gsub("[^A-Za-z0-9,;._-]","",usergroups2$displayName)
+groups_auditted<-as.character(length(usergroups2$displayName))
 
 #create empty table for groups by interactions
-ugroup_table<-data.frame(group=character(),interactions=integer())
-
+ugroup_table<-data.frame(group=character(),interactions=integer(),during_work=integer(),percent_at_work=numeric())
 
 for (i in 1:length(usergroups2$displayName)){
-group_membership<-unlist(usergroups2$users[i])
+group_membership<-unlist(usergroups2$users[[i]])
 group_users<-user_api2[user_api2$id %in% group_membership, "usernames"]
 ub<-df[df$user %in% group_users, ]
   if(length(ub$user) && sum(ub$edits)>0){
@@ -264,23 +272,27 @@ ub<-df[df$user %in% group_users, ]
     ub_agg1<- as_data_frame(aggregate(ub["edits"], by=ub["stagename"], sum))
     ub_agg2<- as_data_frame(aggregate(ub["edits"], by=c(ub["hour"],ub["stagename"]), sum))
     groupname<-usergroups2$displayName[i]
-    
     z<-tableGrob(c(groupname,paste0("users: ",length(group_membership))), 
                          theme =ttheme_minimal(base_size = 8, padding=unit(rep(2,2),"mm")))
     allplots<-plot_grid(z, get_p1(ub_agg1),get_p2(ub_agg2),ncol=1, rel_heights = c(1,6,6))
     gtitle<- paste0("usergroup_",groupname,".png")
     save_plot(gtitle,allplots,base_aspect_ratio = 1.3)
-    
-    
-    groupname_edits<-data.frame(group=groupname,interactions=sum(ub_agg1$edits))
+
+    workhours<-subset(ub_agg2, hour >= workhour_start & hour < workhour_end)
+    groupname_edits<-data.frame(group=groupname,
+                                interactions=sum(ub_agg1$edits), 
+                                during_work=sum(workhours$edits))
+    groupname_edits$percent_at_work<-round(groupname_edits$during_work / groupname_edits$interactions, 2)
     ugroup_table<-dplyr::bind_rows(ugroup_table,groupname_edits)
-    #debug to print each user as outputted... 
+
+        #debug to print each user as outputted... 
     #print(groupname)
-  }else{
+      }else{
     next()
         }
 }
 
+  
 ```
 
 In total, **`r groups_auditted`** different user groups have entered tracker data.
@@ -293,16 +305,16 @@ Below are the user groups with the most user interactions in tracker.
 
 #create the table of common groups
 common_groups<-data.frame(head(ugroup_table[order(ugroup_table$interactions,decreasing = TRUE),],5))
-common_groups_table<-tableGrob(common_groups, theme=ttheme_minimal(padding=unit(rep(2,2),"mm")))
 
-gridExtra::grid.arrange(common_groups_table)
+common_groups<-ugroup_table[order(ugroup_table$interactions, decreasing = TRUE),]
+datatable(common_groups, caption="User groups with most interactions")
 ```
 
 ###User Level Analysis
 Last step is to print out same analysis for each individual user
 ```{r users list}
 unique_users <-sort(unique(df$user), decreasing = FALSE)
-user_edits_table<-data.frame(user=character(),interactions=integer())
+user_edits_table<-data.frame(user=character(),interactions=integer(),during_work=integer(),percent_at_work=numeric())
 
 for (value in unique_users) {
     ub <- df[df$user==value,]
@@ -327,8 +339,11 @@ ub_agg2<- as_data_frame(aggregate(ub["edits"], by=c(ub["hour"],ub["stagename"]),
 get_p1(ub_agg1)
 get_p2(ub_agg2)
 
+
 #add their data to the overall user edits table
-user_edits<-data.frame(user=value,interactions=sum(ub$edits))
+ workhours<-subset(ub_agg2, hour >= workhour_start & hour < workhour_end)
+ user_edits<-data.frame(user=value,interactions=sum(ub_agg1$edits), during_work=sum(workhours$edits))                                
+user_edits$percent_at_work<-round(user_edits$during_work / user_edits$interactions, 2)
 user_edits_table<-dplyr::bind_rows(user_edits_table,user_edits)
 
 library(cowplot)
@@ -340,6 +355,7 @@ save_plot(utitle,allplots, base_aspect_ratio = 1.3)
 }
 ```
 
+
 Graphs showing top stages by hour for each username are found at directory `r getwd()` e.g. at `r paste0(getwd(),"/",utitle)`
 
 Below are the usernames with the most freqent user interactions in tracker. 
@@ -349,7 +365,9 @@ Below are the usernames with the most freqent user interactions in tracker.
 common_users<-data.frame(head(user_edits_table[order(user_edits_table$interactions,decreasing = TRUE),],5))
 common_users_table<-tableGrob(common_users,theme=ttheme_minimal(padding=unit(rep(2,2),"mm")))
 
-gridExtra::grid.arrange(common_users_table)
+library(DT)
+datatable(common_users)
+
 ```
 
 ##End analysis
