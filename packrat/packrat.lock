@@ -31,8 +31,7 @@ Hash: d2eff4634ccd7aca030c540ad805ac4a
 
 Package: XML
 Source: CRAN
-Version: 3.98-1.11
-Hash: 93ca736e34d01f5952dc770fbfa5fa62
+Version: 3.98-1.20
 
 Package: assertthat
 Source: CRAN
@@ -121,6 +120,17 @@ Version: 0.10.1
 Hash: 54d95f4ec6d0300100413ed0127d89ae
 Requires: stringr
 
+Package: filelock
+Source: CRAN
+Version: 1.0.2
+Hash: 97adcbe3b816f81113e84168d06746d8
+
+Package: getPass
+Source: CRAN
+Version: 0.2-2
+Hash: 0000fb79893c1b2c226fa79f6b2e60f2
+Requires: rstudioapi
+
 Package: ggplot2
 Source: CRAN
 Version: 3.1.0
@@ -183,6 +193,13 @@ Package: jsonlite
 Source: CRAN
 Version: 1.5
 Hash: 9c51936d8dd00b2f1d4fe9d10499694c
+
+Package: keyring
+Source: CRAN
+Version: 1.1.0
+Hash: e43f51c457f58ca4af860198160578ec
+Requires: R6, assertthat, filelock, getPass, openssl, rappdirs, sodium,
+    yaml
 
 Package: knitr
 Source: CRAN
@@ -272,6 +289,11 @@ Version: 0.2.5
 Hash: 8b0c16db10c7e20b70cd37779a673a8b
 Requires: magrittr, rlang, tibble
 
+Package: rappdirs
+Source: CRAN
+Version: 0.3.1
+Hash: 7340cfebc77ad7b107a549a8635e64dd
+
 Package: readr
 Source: CRAN
 Version: 1.1.1
@@ -293,7 +315,7 @@ Package: rlist
 Source: CRAN
 Version: 0.4.6.1
 Hash: 4900e17a86fa510778fd99079c905d5d
-Requires: XML, data.table, jsonlite, yaml
+Requires: data.table, jsonlite, yaml, XML
 
 Package: rmarkdown
 Source: CRAN
@@ -308,6 +330,11 @@ Version: 1.3-2
 Hash: a25c3f70c166fb3fbabc410eb32b6366
 Requires: backports
 
+Package: rstudioapi
+Source: CRAN
+Version: 0.7
+Hash: e2ebaff8160aff3e6b32e6e78a693c2d
+
 Package: scales
 Source: CRAN
 Version: 0.5.0
@@ -321,6 +348,11 @@ Version: 1.3.2
 Hash: a48cf01573400333efa51dc999ab6447
 Requires: R6, crayon, digest, htmltools, httpuv, jsonlite, later, mime,
     promises, rlang, sourcetools, xtable
+
+Package: sodium
+Source: CRAN
+Version: 1.1
+Hash: fefcc4853ec7eedb939924477189da52
 
 Package: sourcetools
 Source: CRAN

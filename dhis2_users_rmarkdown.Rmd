@@ -6,35 +6,44 @@ title: "DHIS2 User Activity Analysis"
 knitr::opts_chunk$set(echo=FALSE, message=TRUE, warning=FALSE, paged.print=FALSE, fig.width = 7)
 options(encoding = "UTF-8")
 
-#credentials and global variables (include last backslash)
+#IMPORTANT MANUAL STEPS BEFORE RUNNING
+
+#load packages. RUN THESE LINES FIRST!!! Then you comment them out.
+packrat::init(options = list(use.cache = TRUE))
+packrat::restore()
+install.packages("XML")
+
+######credentials and global variables#####
+####(include https;//  and last backslash of baseurl, in quotes)
 baseurl<-"https://play.dhis2.org/2.31.3/"
 username<-"admin"
-password<-"district"
+#youll now be prompted for password
+library(keyring)
+keyring::key_set("Password", username=username)
 
-#startdate in yyyy-mm-dd format
+#startdate in yyyy-mm-dd format, in quotes
 startdate<- "2014-01-21"
 enddate<-""
 
 #workhour start and end in 24 hr format, no quotes
 workhour_start<-9
 workhour_end<-17
-  
-wd<-getwd()
-
 
 ########################___Libraries and Code Below___##########################################################
-library(ggplot2)
-library(stringr)
+require(ggplot2)
+require(stringr)
 require(httr)
 require(jsonlite)
 require(assertthat)
 require(rlist)
 require(readr)
-library(tibble)
+require(tibble)
 require(plyr)
 require(gridExtra)
 require(cowplot)
-
+require(rmarkdown)
+require(knitr)
+require(assertthat)
 
 ##validations of entered dates
 today<-Sys.Date()
@@ -58,6 +67,8 @@ if(IsDate(enddate)){
   enddate<-as.Date(today)
 }
 
+
+wd<-getwd()
 ```
 
 ###Analyzing user-level data for `r baseurl`.
@@ -71,12 +82,13 @@ The selected dates for analysis are between `r startdate` and `r enddate`
 First, check to see that log in is valid.
 ```{r login, echo=FALSE, message=TRUE, warning=FALSE, paged.print=FALSE}
 ##test of logging in
-loginDHIS2<-function(baseurl,username,password) {
+library(keyring)
+loginDHIS2<-function(baseurl,username) {
     url<-paste0(baseurl,"api/me")
-    r<-GET(url,authenticate(username,password))
+    r<-GET(url,authenticate(username, key_get("Password", username=username) ))
     assert_that(r$status_code == 200L) }
 
-if(loginDHIS2(baseurl,username,password)){
+if(loginDHIS2(baseurl,username)){
   print("successfully logged in")
 }else{
   stop("could not log in! Please check url, username and password")
@@ -90,7 +102,7 @@ Now pull data on user activity from TEI audit log and pull user info from API.
 #now, search if this instance already has SQL views with this name
 viewName1 <- "user_data_withstartdate"
 url<-paste0(baseurl,"api/sqlViews.json?filter=name:$like:",viewName1)
-r<-httr::GET(url, httr::authenticate(username,password),httr::timeout(60))
+r<-httr::GET(url, httr::authenticate(username,key_get("Password", username=username)),httr::timeout(60))
 sql <- jsonlite::fromJSON(httr::content(r,as = "text"))
 viewUID<-sql$sqlViews$id[1]
 if(is.null(viewUID)){
@@ -98,7 +110,7 @@ if(is.null(viewUID)){
   url<-paste0(baseurl,"api/27/metadata.json?importStrategy=CREATE")
   r<-POST(url, body=upload_file(paste0(wd, "/",viewName1,".json")))
   url<-paste0(baseurl,"api/sqlViews.json?filter=name:$like:",viewName1)
-  r<-httr::GET(url, httr::authenticate(username,password),httr::timeout(60))
+  r<-httr::GET(url, httr::authenticate(username,key_get("Password", username=username)),httr::timeout(60))
   sql <- jsonlite::fromJSON(httr::content(r,as = "text"))
   viewUID<-sql$sqlViews$id[1]
 } else {
@@ -110,7 +122,7 @@ if(!all(file.exists(paste0(wd, "/",viewName1,".json"))))
 
 #now execute the SQL view
 createsql<-paste0(baseurl,"api/26/sqlViews/",viewUID,"/execute")
-r<-httr::POST(createsql, httr::authenticate(username,password),httr::timeout(60))
+r<-httr::POST(createsql, httr::authenticate(username,key_get("Password", username=username)),httr::timeout(60))
 if(r$status_code == 200){
   warning(paste0("executing view.. ",viewName1))
 } else {
@@ -137,7 +149,7 @@ total_users_auditted<-length(unique(df$user))
 
 ##get users full names and last logins, and user UIDs
 url<-paste0(baseurl,"api/users.json?fields=id,displayName,userGroups,user,userCredentials[lastLogin,username]&paging=false")
-r<-httr::GET(url, httr::authenticate(username,password),httr::timeout(60))
+r<-httr::GET(url, httr::authenticate(username,key_get("Password", username=username)),httr::timeout(60))
 user_api<-jsonlite::fromJSON(content(GET(url),"text"))
 user_api2 <- ldply(user_api, data.frame)
 usernames<-user_api2$userCredentials$username
@@ -244,7 +256,7 @@ Next, we will analyze by user group.
 ```{r User Group Analysis, fig.height=3}
 ##now we pull user groups, and subset tracker interactions by user.
 url<-paste0(baseurl,"api/userGroups?fields=users,displayName&paging=false")
-r<-httr::GET(url, httr::authenticate(username,password),httr::timeout(60))
+r<-httr::GET(url, httr::authenticate(username,key_get("Password", username=username)),httr::timeout(60))
 if (r$status_code != 200){
   stop("could not extract user groups")
 }
@@ -297,16 +309,14 @@ ub<-df[df$user %in% group_users, ]
 
 In total, **`r groups_auditted`** different user groups have entered tracker data.
 
-Graph showing top stages by hour for each user group are found at directory `r getwd()` E.g. at `r paste0(getwd(),gtitle)`
+Graph showing top stages by hour for each user group are found at directory `r getwd()` E.g. at `r paste0(getwd(),"/",gtitle)`
 
 Below are the user groups with the most user interactions in tracker. 
 
 ```{r top usergroups, fig.height=2}
 
 #create the table of common groups
-common_groups<-data.frame(head(ugroup_table[order(ugroup_table$interactions,decreasing = TRUE),],5))
-
-common_groups<-ugroup_table[order(ugroup_table$interactions, decreasing = TRUE),]
+common_groups<-data.frame(ugroup_table[order(ugroup_table$interactions, decreasing = TRUE),], row.names = NULL)
 datatable(common_groups, caption="User groups with most interactions")
 ```
 
@@ -362,11 +372,11 @@ Below are the usernames with the most freqent user interactions in tracker.
 
 ```{r top users, fig.height=2}
 #create the table of common groups
-common_users<-data.frame(head(user_edits_table[order(user_edits_table$interactions,decreasing = TRUE),],5))
+common_users<-data.frame(user_edits_table[order(user_edits_table$interactions,decreasing = TRUE),], row.names=NULL)
 common_users_table<-tableGrob(common_users,theme=ttheme_minimal(padding=unit(rep(2,2),"mm")))
 
 library(DT)
-datatable(common_users)
+datatable(common_users, caption = "Users with most frequent interactions")
 
 ```
 
