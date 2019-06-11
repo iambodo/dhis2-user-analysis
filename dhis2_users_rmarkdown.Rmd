@@ -9,9 +9,9 @@ options(encoding = "UTF-8")
 #IMPORTANT MANUAL STEPS BEFORE RUNNING
 
 #load packages. RUN THESE LINES FIRST!!! Then you comment them out.
-packrat::init(options = list(use.cache = TRUE))
-packrat::restore()
-install.packages("XML")
+#packrat::init(options = list(use.cache = TRUE))
+#packrat::restore()
+#install.packages("XML")
 
 ######credentials and global variables#####
 ####(include https;//  and last backslash of baseurl, in quotes)
@@ -83,6 +83,7 @@ First, check to see that log in is valid.
 ```{r login, echo=FALSE, message=TRUE, warning=FALSE, paged.print=FALSE}
 ##test of logging in
 library(keyring)
+library(httr)
 loginDHIS2<-function(baseurl,username) {
     url<-paste0(baseurl,"api/me")
     r<-GET(url,authenticate(username, key_get("Password", username=username) ))
@@ -183,10 +184,19 @@ Program stages are listed below, by order of overall number of edits
 
 #note: "interactions" abbreviated to "edits" in analysis code.
 
-cs<-as_data_frame(aggregate((df$edits), list(Stage = df$stagename), sum))
-most_common<-cs[order(cs$x, decreasing = TRUE),]
-names(most_common)[2]<-"Interactions"
+cs<-as_data_frame(aggregate((df$edits), list(Stage = df$stagename, hour = df$hour), sum))
+
+workhours<-subset(cs, hour >= workhour_start & hour < workhour_end)
+workhours<-as_data_frame(aggregate((workhours$x), list(Stage = workhours$Stage), sum))
+
+stages_overall<-as_data_frame(aggregate((cs$x), list(Stage = cs$Stage), sum))
+stages_overall<-merge(x=stages_overall, y = workhours, by="Stage")
+names(stages_overall)<-c("stage","interactions","during_work")
+stages_overall$percent_at_work<-round(stages_overall$during_work / stages_overall$interactions, 2)
+
+most_common<-as_data_frame(stages_overall[order(stages_overall$interactions, decreasing = TRUE),], rownames = NULL)
 datatable(most_common, caption="Stages with most interactions")
+
 ```
 
 This shows interactions by stage, for all users.
