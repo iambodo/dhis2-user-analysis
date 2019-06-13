@@ -1,0 +1,14 @@
+backend                 Abstract class of a minimal keyring backend
+backend_env             Store secrets in environment variables
+backend_file            Store secrets in encrypted files
+backend_keyrings        Abstract class of a backend that supports
+                        multiple keyrings
+backend_macos           Create a macOS Keychain backend
+backend_secret_service
+                        Create a Secret Service keyring backend
+backend_wincred         Create a Windows Credential Store keyring
+                        backend
+backends                Select the default backend and default keyring
+has_keyring_support     Manage keyrings
+key_get                 Query, set, delete list keys in a keyring
+keyring                 Access the System Credential Store from R
