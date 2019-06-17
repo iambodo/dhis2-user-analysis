@@ -3,47 +3,46 @@ title: "DHIS2 User Activity Analysis"
 ---
 
 ```{r setup, include=FALSE, echo = TRUE}
-knitr::opts_chunk$set(echo=FALSE, message=TRUE, warning=FALSE, paged.print=FALSE, fig.width = 7)
+knitr::opts_chunk$set(echo=FALSE, message=TRUE, warning=FALSE, paged.print=FALSE)
 options(encoding = "UTF-8")
 
+##SEE MANUAL STEPS FOR CONFIGURATION BELOW
+
+##first load required packages
+required_packages <- c("ggplot2", "stringr","httr","jsonlite","assertthat","rlist","readr",         "tibble","plyr","gridExtra","cowplot","knitr","askpass","DT","knitr","keyring")
+
+is_installed <- function(mypkg) is.element(mypkg, installed.packages()[,1])
+
+load_or_install<-function(required_packages) {
+  for(package_name in required_packages)  {
+    if(!is_installed(package_name))     {
+       install.packages(package_name,repos="http://lib.stat.cmu.edu/R/CRAN")  }
+    library(package_name,character.only=TRUE,quietly=TRUE,verbose=FALSE)
+  }
+}
+
+load_or_install(required_packages)
+
+
 #IMPORTANT MANUAL STEPS BEFORE RUNNING
-
-#load packages. RUN THESE LINES FIRST!!! Then you comment them out.
-#packrat::init(options = list(use.cache = TRUE))
-#packrat::restore()
-#install.packages("XML")
-
 ######credentials and global variables#####
 ####(include https;//  and last backslash of baseurl, in quotes)
-baseurl<-"https://play.dhis2.org/2.31.3/"
+baseurl<-"https://play.dhis2.org/2.29/"
 username<-"admin"
 #youll now be prompted for password
-library(keyring)
+require(keyring)
 keyring::key_set("Password", username=username)
 
-#startdate in yyyy-mm-dd format, in quotes
+
+#startdate in yyyy-mm-dd format
 startdate<- "2014-01-21"
 enddate<-""
 
 #workhour start and end in 24 hr format, no quotes
 workhour_start<-9
 workhour_end<-17
-
-########################___Libraries and Code Below___##########################################################
-require(ggplot2)
-require(stringr)
-require(httr)
-require(jsonlite)
-require(assertthat)
-require(rlist)
-require(readr)
-require(tibble)
-require(plyr)
-require(gridExtra)
-require(cowplot)
-require(rmarkdown)
-require(knitr)
-require(assertthat)
+  
+wd<-getwd()
 
 ##validations of entered dates
 today<-Sys.Date()
@@ -67,8 +66,6 @@ if(IsDate(enddate)){
   enddate<-as.Date(today)
 }
 
-
-wd<-getwd()
 ```
 
 ###Analyzing user-level data for `r baseurl`.
