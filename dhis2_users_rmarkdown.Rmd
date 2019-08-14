@@ -15,8 +15,8 @@ options(encoding = "UTF-8")
 #IMPORTANT MANUAL STEPS BEFORE RUNNING
 #credentials and global variables#
 #(include https://  and last backslash of DHIS2 URL, in quotes)
-baseurl<-"https://bd-eregistry.dhis2.org/dhis/"
-username<-"ing_test"
+baseurl<-"http://hrhr.dhis2.org/dhis/"
+username<-"brian"
 #you will be prompted for password
 
 #workhour start and end in 24 hr format, no quotes
@@ -31,7 +31,7 @@ enddate<-""
 
 ##______Now load packages and set up_____##
 ##first load required packages
-required_packages <- c("ggplot2", "stringr","httr","jsonlite","assertthat","rlist","readr",         "tibble","plyr","tidyr","dygraphs","xts","gridExtra","cowplot","lubridate","plotly","knitr","askpass","DT","keyring","devtools")
+required_packages <- c("ggplot2", "stringr","httr","jsonlite","assertthat","rlist","readr",         "tibble","plyr","tidyr","dygraphs","xts","gridExtra","cowplot","lubridate","plotly","askpass","DT","keyring","devtools")
 
 
 is_installed <- function(mypkg) is.element(mypkg, installed.packages()[,1])
@@ -51,8 +51,6 @@ devtools::install_github("walkerke/bsselectR")
 #IMPORTANT MANUAL STEPS BEFORE RUNNING
 #credentials and global variables#
 #(include https;//  and last backslash of baseurl, in quotes)
-baseurl<-"https://bd-eregistry.dhis2.org/dhis/"
-username<-"ing_test"
 #youll now be prompted for password
 require(keyring)
 keyring::key_set("Password", username=username)
@@ -95,9 +93,9 @@ Analyzing user-level data for `r baseurl`.
 ##Description
 DHIS2 keeps a log of every entry of a data element into a tracker program at the */trackedentitydatavalueaudit* API endpoint, including username and timestamp.
 
-With these data, we can analyze user activity with tracker data elements, referred to as *edits* in tables.
+With these data, we can analyze user activity with tracker data elements, referred to as *edits* in our tables below.
 
-The selected dates for analysis are between * `r startdate` * and * `r enddate` *
+The selected dates for analysis are between *`r startdate`* and *`r enddate`*
 
 First, check to see that log in is valid.
 ```{r login, echo=FALSE, message=TRUE, warning=FALSE, paged.print=FALSE}
@@ -169,11 +167,9 @@ auditted_updates<-as.character(filter(audits_total, auditType=="UPDATE")[2])
 
 We've now pulled audit log and some metadata from API.
 
-The TrackedEntityDataValue table shows **{r auditted_updates} UPDATES** and **{r auditted_deletions} DELETIONS**.
+The TrackedEntityDataValue table shows **`r auditted_updates` UPDATES** and **`r auditted_deletions` DELETIONS**.
 
-An update may be a _new_ data value being entered into a stage, _or_ editing an existing value. A deletion is an erasure of an existing data value.
-
-For simplicity we can refer to these together as *edits*.
+An update may be a _new_ data value being entered into a stage, _or_ editing an existing value. A deletion is an erasure of an existing data value. For simplicity we can refer to these together as *edits*.
 
 See the [DHIS2 developer guide](https://docs.dhis2.org/master/en/developer/html/dhis2_developer_manual_full.html) for details.
 
@@ -367,7 +363,7 @@ edits_by_user_all<-edits_by_user_stagehour %>%
 #for overal users charts below
 
 total_users<-length(unique(users$displayName))
-total_loggedin<-length(na.omit(users$userCredentials.lastLogin))
+total_loggedin<-length(unique(na.omit(users$userCredentials.lastLogin)))
 total_users_auditted<-length(unique(edits_by_user$modifiedBy))
 
 user_stats<-edits_by_user_all %>%
@@ -390,7 +386,6 @@ ex2<-sample(top_users$username, 1)
 
 ```
 
-<br>
 ##User Details - Who Enters Tracker Data?
 Now pull data on user activity from TEI audit log and pull user info from API.
 
@@ -439,7 +434,7 @@ DT::datatable(users_table,
 
 
 ```
-<br>
+
 ##User Audits by Stage
 We can extrapolate from this which program stages show the most frequent edits.
 
@@ -605,9 +600,9 @@ ggplot(edits_by_dayhour, aes(x = hour, y = edits)) +
 
 
 ```
-<br>
 
-## Users and User Groups {.tabset .tabset-fade}
+
+## Users and User Groups
 
 Usage patterns can look very different when down to the user level.
 
@@ -620,7 +615,9 @@ get_p2(edits_by_user_stagehour %>% filter(modifiedBy==ex2))
 
 
 ```
-###User Groups 
+
+###User Groups
+
 In total, `r length(unique(ugcharts_withhour$usergroup))` different user groups have entered tracker data.
 
 Graph showing top stages by hour for each user group are found at directory `r getwd()` E.g. at `r paste0(getwd(),"/plots/usergroups")`
@@ -686,11 +683,11 @@ Graphs showing top stages by hour for each username are found at directory `r pa
 
 
 
-###Individual Users 
+###Individual Users
 
 Below are the usernames with the most freqent user interactions ("edits") in tracker. 
 
-```{r top users, echo=FALSE, eval=FALSE, fig.height=2}
+```{r top users, echo=FALSE, eval=TRUE, fig.height=2}
 
 #create our list of user groups
 users_auditted_list <- unique(edits_by_user_stagehour$modifiedBy)
