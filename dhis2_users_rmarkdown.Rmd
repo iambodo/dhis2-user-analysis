@@ -908,7 +908,7 @@ quote<-"'"
 ###Events With Multiple Users Submitting Data
 Here we get a simple listing of events where multiple users editted the same stage. 
  
-`r length(psi_users)` events had multiple users submit data. This may be evidence of data tampering!
+`r length(psi_users$name)` events had multiple users submit data. This may be evidence of data tampering!
  
 You can search for these event UIDs through the API for more details. 
  
