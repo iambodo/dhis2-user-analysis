@@ -169,7 +169,7 @@ auditted_updates<-as.character(filter(audits_total, auditType=="UPDATE")[2])
 
 We've now pulled audit log and some metadata from API.
 
-The TrackedEntityDataValue table shows **{r auditted_updates} UPDATES** and **{r auditted_deletions} DELETIONS**.
+The TrackedEntityDataValue table shows **`r auditted_updates` UPDATES** and **`r auditted_deletions` DELETIONS**.
 
 An update may be a _new_ data value being entered into a stage, _or_ editing an existing value. A deletion is an erasure of an existing data value.
 
@@ -620,7 +620,11 @@ get_p2(edits_by_user_stagehour %>% filter(modifiedBy==ex2))
 
 
 ```
+
+<br>
+
 ###User Groups 
+
 In total, `r length(unique(ugcharts_withhour$usergroup))` different user groups have entered tracker data.
 
 Graph showing top stages by hour for each user group are found at directory `r getwd()` E.g. at `r paste0(getwd(),"/plots/usergroups")`
@@ -679,7 +683,6 @@ DT::datatable(edits_by_usergroup_all, extensions = 'Buttons', options = list(
 
 
 ```
-
 
 
 Graphs showing top stages by hour for each username are found at directory `r paste0(getwd(),"/plots/users")`
