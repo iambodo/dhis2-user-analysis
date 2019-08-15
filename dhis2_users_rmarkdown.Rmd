@@ -141,7 +141,7 @@ if(loginDHIS2(baseurl,username)){
 
 
 #better method: paginate the response
-url<-paste0(baseurl,"api/audits/trackedEntityDataValue.json?paging=true&pageSize=1000")
+url<-paste0(baseurl,"api/audits/trackedEntityDataValue.json?paging=true&pageSize=10000")
 pages_array<-fromJSON(content(GET(url),"text"), flatten = TRUE)[[1]]
 pages_list<-pages_array$pageCount
 paged_resp<-list()
