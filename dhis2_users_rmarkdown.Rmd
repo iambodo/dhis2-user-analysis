@@ -1,5 +1,5 @@
 ---
-title: "DHIS2 User Activity Analysis"
+title: "DHIS2 Tracker: User Activity Analysis"
 output:
   html_document:
     toc: true
@@ -134,12 +134,26 @@ if(loginDHIS2(baseurl,username)){
 
 
 #get ALL tei audit from url
-library(jsonlite)
-url<-paste0(baseurl,"api/audits/trackedEntityDataValue.json?paging=false")
-all_tei_audits<-as.data.frame(suppressMessages(
-  jsonlite::fromJSON(content(GET(url),"text"), flatten = TRUE)[[1]]))
+#library(jsonlite)
+#url<-paste0(baseurl,"api/audits/trackedEntityDataValue.json?paging=false")
+#all_tei_audits<-as.data.frame(suppressMessages(
+#  jsonlite::fromJSON(content(GET(url),"text"), flatten = TRUE)[[1]]))
 
 
+#better method: paginate the response
+url<-paste0(baseurl,"api/audits/trackedEntityDataValue.json?paging=true&pageSize=1000")
+pages_array<-fromJSON(content(GET(url),"text"), flatten = TRUE)[[1]]
+pages_list<-pages_array$pageCount
+paged_resp<-list()
+
+#debug into the loop: print(paste("Retrieving page ", i))
+
+for(i in 1:pages_list){
+  url_paged<-paste0(url, "&page=", i)
+  paged_resp[[i+1]]<-jsonlite::fromJSON(content(GET(url_paged),"text"), flatten = TRUE)[[2]]
+}
+
+all_tei_audits<-rbind_pages(paged_resp)
 
 #get user info
 url<-paste0(baseurl,"api/users.json?fields=id,displayName,userGroups,user,userCredentials[lastLogin,username]&paging=false")
@@ -163,6 +177,8 @@ audits_total<-all_audit_summary %>%
 
 auditted_deletions<-as.character(filter(audits_total, auditType=="DELETE")[2])
 auditted_updates<-as.character(filter(audits_total, auditType=="UPDATE")[2])
+
+
 ```
 
 We've now pulled audit log and some metadata from API.
