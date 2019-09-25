@@ -23,7 +23,6 @@ Analysis for **each USER GROUP and each USER** is outputted to the working direc
 When executing Knitr, the resulting output is a summary of the analyses performed.
 (RStudio recommended to use Knitr.)
 
-Future possible improvements
 * User-level data on tracked entity attribute and enrollments
 * Combining with user-level interpretations and aggregate dataset interactions
 

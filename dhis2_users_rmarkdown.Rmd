@@ -1,0 +1,978 @@
+---
+title: "DHIS2 User Activity Analysis"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    toc_depth: 4
+---
+
+```{r setup, include=FALSE, echo = TRUE}
+knitr::opts_chunk$set(echo=FALSE, message=TRUE, warning=FALSE, paged.print=FALSE)
+options(encoding = "UTF-8")
+
+
+#IMPORTANT MANUAL STEPS BEFORE RUNNING
+#credentials and global variables#
+#(include https://  and last backslash of DHIS2 URL, in quotes)
+baseurl<-"https://bd-eregistry.dhis2.org/dhis/"
+username<-"ing_test"
+#you will be prompted for password
+
+#workhour start and end in 24 hr format, no quotes
+workhour_start<-9
+workhour_end<-17
+
+#analysis time period in yyyy-mm-dd format.
+#if blank, will use today's date as start date, and 1 year ago today as end date
+startdate<- "2014-01-21"
+enddate<-""
+
+
+##______Now load packages and set up_____##
+##first load required packages
+required_packages <- c("ggplot2", "stringr","httr","jsonlite","assertthat","rlist","readr",         "tibble","plyr","tidyr","dygraphs","xts","gridExtra","cowplot","lubridate","plotly","knitr","askpass","DT","keyring","devtools")
+
+
+is_installed <- function(mypkg) is.element(mypkg, installed.packages()[,1])
+
+load_or_install<-function(required_packages) {
+  for(package_name in required_packages)  {
+    if(!is_installed(package_name))     {
+       install.packages(package_name,repos="http://lib.stat.cmu.edu/R/CRAN")  }
+    library(package_name,character.only=TRUE,quietly=TRUE,verbose=FALSE)
+  }
+}
+
+load_or_install(required_packages)
+devtools::install_github("walkerke/bsselectR")
+
+
+#IMPORTANT MANUAL STEPS BEFORE RUNNING
+#credentials and global variables#
+#(include https;//  and last backslash of baseurl, in quotes)
+baseurl<-"https://bd-eregistry.dhis2.org/dhis/"
+username<-"ing_test"
+#youll now be prompted for password
+require(keyring)
+keyring::key_set("Password", username=username)
+
+
+##validations of entered dates and hours
+today<-Sys.Date()
+IsDate <- function(mydate, date.format = "%Y-%m-%d") {
+  tryCatch(!is.na(as.Date(mydate, date.format)),  
+           error = function(err) {FALSE})  
+}
+
+if(IsDate(startdate)){
+  print("startdate is valid")
+}else{
+  print("startdate is not valid yyyy-mm-dd format. Using startdate from 1 year ago today")
+  dat2<-as.POSIXlt(today) 
+  dat2$year<-dat2$year-1 
+  startdate<-as.Date(dat2)
+}
+if(IsDate(enddate)){
+  print("enddate is valid")
+}else{
+  print("enddate is not valid yyyy-mm-dd format. Using today as enddate")
+  enddate<-as.Date(today)
+}
+
+
+workhour_start<-as.numeric(workhour_start)
+workhour_end<-as.numeric(workhour_end)
+
+wd<-getwd()
+
+```
+
+
+Analyzing user-level data for `r baseurl`. 
+
+
+##Description
+DHIS2 keeps a log of every entry of a data element into a tracker program at the */trackedentitydatavalueaudit* API endpoint, including username and timestamp.
+
+With these data, we can analyze user activity with tracker data elements, referred to as *edits* in tables.
+
+The selected dates for analysis are between * `r startdate` * and * `r enddate` *
+
+First, check to see that log in is valid.
+```{r login, echo=FALSE, message=TRUE, warning=FALSE, paged.print=FALSE}
+##test of logging in
+library(keyring)
+library(httr)
+loginDHIS2<-function(baseurl,username) {
+    url<-paste0(baseurl,"api/me")
+    r<-GET(url,authenticate(username, key_get("Password", username=username) ))
+    assert_that(r$status_code == 200L) }
+
+if(loginDHIS2(baseurl,username)){
+  print("successfully logged in")
+}else{
+  stop("could not log in! Please check url, username and password")
+}
+```
+
+
+```{r pull data by API, echo=FALSE, message=FALSE}
+#Here we'll see if we can pull data directly from tei API and manipulate
+
+####priorities
+#get all tables through API - done
+
+#tab for users and tab for user groups - done
+#time series by hour, with lines per day of week 0- done
+
+#apply these data to the charting and DT functions -  done
+#folders for users and user groups graphics - done
+
+#heatmap by stage x hour
+#link the data table and the heatmap with link to users list - send this as stackoverflow question
+
+#"sessions" = time working on a program stage - done
+
+
+#get ALL tei audit from url
+library(jsonlite)
+url<-paste0(baseurl,"api/audits/trackedEntityDataValue.json?paging=false")
+all_tei_audits<-as.data.frame(suppressMessages(
+  jsonlite::fromJSON(content(GET(url),"text"), flatten = TRUE)[[1]]))
+
+
+
+#get user info
+url<-paste0(baseurl,"api/users.json?fields=id,displayName,userGroups,user,userCredentials[lastLogin,username]&paging=false")
+
+users<-as.data.frame(suppressMessages(
+  jsonlite::fromJSON(content(GET(url),"text"), flatten = TRUE)[[1]]))
+
+
+#summarize tei audit data by user
+library(dplyr)
+all_audit_summary<-all_tei_audits %>%
+  left_join(users, by = c("modifiedBy" = "userCredentials.username")) %>%
+  group_by(modifiedBy, displayName, auditType) %>%
+  summarize(n()) %>%
+  rename("Sum_Edits"="n()")
+
+audits_total<-all_audit_summary %>%
+  group_by(auditType) %>% 
+  summarize(sum(Sum_Edits)) %>%
+  arrange(desc(auditType))
+
+auditted_deletions<-as.character(filter(audits_total, auditType=="DELETE")[2])
+auditted_updates<-as.character(filter(audits_total, auditType=="UPDATE")[2])
+```
+
+We've now pulled audit log and some metadata from API.
+
+The TrackedEntityDataValue table shows **`r auditted_updates` UPDATES** and **`r auditted_deletions` DELETIONS**.
+
+An update may be a _new_ data value being entered into a stage, _or_ editing an existing value. A deletion is an erasure of an existing data value.
+
+For simplicity we can refer to these together as *edits*.
+
+See the [DHIS2 developer guide](https://docs.dhis2.org/master/en/developer/html/dhis2_developer_manual_full.html) for details.
+
+This table shows all users who entered tracker data by number of deletions and updates.
+
+```{r user audit full, echo=FALSE}
+##get users full names and last logins, and user UIDs
+
+DT::datatable(all_audit_summary, 
+              caption = "All users by audits",
+              extensions = 'Buttons', 
+              options = list(
+                pageLength = 5,
+                dom = 'Blfrtip', 
+                buttons = c('copy', 'csv', 'excel', 'pdf', 'print')))
+
+
+#other contextual data
+#get program stage info
+url<-paste0(baseurl,"api/programStages.json?fields=id,name,program[id],programStageDataElements[id]&paging=false")
+ps<-as.data.frame(suppressMessages(
+  jsonlite::fromJSON(content(GET(url),"text"), flatten = TRUE)[[1]]))
+
+#remove trailing spaces from stagename (bangladesh ereg specific)
+ps$name <-gsub("_+$", "",ps$name)
+
+#get total number of DE per stage
+#for (i in 1:length(ps$programStageDataElements)){
+#ps$all_DE[i] <-sum(lengths((ps$programStageDataElements[[i]]))#)
+#                                                                             }
+
+#get event info
+#input each program znd cycle through, then add to list
+getEvents<-function(x){
+ev<-as.data.frame(fromJSON(content(GET(paste0(baseurl,"api/events.json?program=",x,"&fields=program,event,programStage,enrollment,orgUnit&paging=false")),"text"), flatten = TRUE)[[1]])
+if(length(colnames(ev))==5){
+return(ev)
+  }
+}
+
+
+#now find unique programs and compile events
+programs<-unique(ps$program.id)
+psi<-ldply(programs, getEvents)
+
+#get usergroup info
+url<-paste0(baseurl,"api/userGroups?fields=users,displayName&paging=false")
+ugroups<-as.data.frame(suppressMessages(
+  jsonlite::fromJSON(content(GET(url),"text"), flatten = TRUE)[[1]]))
+
+```
+
+
+Now, we can merge this with other metadata
+```{r now merge data, echo=FALSE}
+#summary merging user info
+
+edits_by_user_stage<-all_tei_audits %>%
+  left_join(psi, by = c("programStageInstance.id" = "event")) %>%
+  left_join(ps, by = c("programStage" = "id")) %>%
+  drop_na("name") %>%
+  left_join(users, by = c("modifiedBy" = "userCredentials.username")) %>%
+      group_by(modifiedBy, displayName, name) %>%
+      summarize("edits"=n()) 
+
+edits_by_user_stage_dayhour<-all_tei_audits %>%
+  left_join(psi, by = c("programStageInstance.id" = "event")) %>%
+  left_join(ps, by = c("programStage" = "id")) %>%
+  drop_na("name") %>%
+  left_join(users, by = c("modifiedBy" = "userCredentials.username")) %>%
+  mutate(weekday = wday(created, 
+                        week_start = getOption("lubridate.week.start", 7), 
+                        label=TRUE)) %>%
+  mutate(hour = hour(ymd_hms(created))) %>%
+      group_by(modifiedBy, displayName, name, weekday, hour) %>%
+      summarize("edits"=n()) 
+
+
+edits_by_user <-edits_by_user_stage_dayhour %>%
+    ungroup() %>%
+      group_by(modifiedBy,displayName) %>%
+      summarize("edits"=sum(edits)) %>%
+      select("edits","modifiedBy","displayName")
+
+edits_by_user_stagehour<-edits_by_user_stage_dayhour %>%
+    ungroup() %>%
+      group_by(modifiedBy,displayName, name, hour) %>%
+      summarize("edits"=sum(edits)) %>%
+      arrange(desc(edits))
+    
+
+edits_by_stage_hour<-edits_by_user_stage_dayhour %>%
+  ungroup() %>%
+  group_by(name, hour) %>%
+  arrange(desc(name,edits)) %>%
+  select("name", "hour","edits")
+
+
+edits_by_stage_all<-edits_by_stage_hour %>%
+  ungroup() %>%
+  group_by(name) %>%
+  summarize("edits" = sum(edits)) %>%
+  arrange(desc(edits))
+
+
+users_by_dayhour<-edits_by_user_stage_dayhour %>%
+  ungroup() %>%
+  group_by(weekday, hour) %>%
+  arrange(desc(weekday,edits)) %>%
+  summarize("n_users"= n_distinct(modifiedBy))
+
+
+edits_by_date<-all_tei_audits %>%
+    mutate(date = date(ymd_hms(created))) %>%
+  group_by(date,modifiedBy) %>%
+  arrange(desc(date)) %>%
+      summarize(edits=n())
+
+```
+
+
+
+```{r mutate users into usergroups, echo=FALSE, warning=FALSE}
+
+edits_by_user_expanded <- edits_by_user_stage_dayhour %>% 
+left_join(users, by = c("modifiedBy" = "userCredentials.username"))
+
+
+#now just need to loop through the list of usergroups for filtering the edits table
+edits_by_user_usergroup<-data.frame("edits"=integer(),
+                          "modifiedBy"=character(),
+                          "displayName.x"=character(),
+                          "name" = character(),
+                          "hour"=integer(),
+                          "usergroup"=character())
+
+
+for (i in 1:length(ugroups$users)){
+  usergroup<-ugroups$displayName[i]
+  members<-as.vector(ugroups$users[[i]]$id)
+  
+ug_edits<-edits_by_user_expanded %>%
+  filter(id %in% members) %>%
+  ungroup() %>%
+  select(edits, modifiedBy, displayName.x, name, hour) %>%
+  mutate(usergroup = usergroup)
+
+  if(!is.null(ug_edits)){
+edits_by_user_usergroup<-bind_rows(edits_by_user_usergroup, ug_edits)}
+ }
+
+#now collapse user-by-usergroup listing into one dataframe
+edits_by_usergroup_stagehour <-edits_by_user_usergroup %>%
+  group_by(usergroup, name, hour) %>%
+  summarize(edits=sum(edits))
+
+#now we calculate percentage of the usergroup's edits performed during work hours  
+edits_by_usergroup_duringwork<-edits_by_usergroup_stagehour %>%
+  ungroup() %>%
+  select(usergroup, hour, edits) %>%
+  group_by(usergroup) %>%
+  filter(hour > workhour_start, hour < workhour_end) %>%
+  summarize(workhour_edits = sum(edits))
+  
+
+edits_by_usergroup_all<-edits_by_usergroup_stagehour %>%
+  group_by(usergroup) %>%
+  summarize(all_edits = sum(edits)) %>%
+  full_join(edits_by_usergroup_duringwork,by="usergroup") %>%
+  mutate(percent_at_work = round(workhour_edits / all_edits, 2)) %>%
+  arrange(desc(percent_at_work))
+
+#do the same as above, but just for users
+edits_by_user_duringwork<-edits_by_user_stagehour %>%
+  ungroup() %>%
+  select(modifiedBy, hour, edits) %>%
+  group_by(modifiedBy) %>%
+  filter(hour > workhour_start, hour < workhour_end) %>%
+  summarize(workhour_edits = sum(edits))
+  
+
+edits_by_user_all<-edits_by_user_stagehour %>%
+  group_by(modifiedBy) %>%
+  summarize(all_edits = sum(edits)) %>%
+  full_join(edits_by_user_duringwork,by="modifiedBy") %>%
+  mutate(percent_at_work = round(workhour_edits / all_edits, 2)) %>%
+  arrange(desc(percent_at_work)) %>%
+  select("username"="modifiedBy","workhour_edits","all_edits","percent_at_work")
+
+
+#for overal users charts below
+
+total_users<-length(unique(users$displayName))
+total_loggedin<-length(na.omit(users$userCredentials.lastLogin))
+total_users_auditted<-length(unique(edits_by_user$modifiedBy))
+
+user_stats<-edits_by_user_all %>%
+  mutate("median_edits"=as.numeric(median(all_edits, na.rm=TRUE))) %>%
+  mutate("meanh"=as.numeric(mean(percent_at_work, na.rm=TRUE))) %>%
+  mutate("halfsd"= as.numeric(sd(percent_at_work, na.rm=TRUE))/2) %>%
+  mutate("benchmark"=sum(meanh,halfsd)/100) %>%
+  group_by(username) 
+
+  
+top_users <-  user_stats %>%
+  filter(percent_at_work > benchmark & all_edits > median_edits)
+
+rando_users<- user_stats %>%
+  filter(percent_at_work < meanh & all_edits > median_edits)
+
+ex1<-sample(top_users$username, 1)
+ex2<-sample(top_users$username, 1)
+
+
+```
+
+<br>
+##User Details - Who Enters Tracker Data?
+Now pull data on user activity from TEI audit log and pull user info from API.
+
+The audit log shows **`r length(unique(edits_by_stage_all$name))`** unique program stages with data, entered by **`r total_users_auditted`** unique users.
+
+Overall, **`r total_users`** users have accounts, and **`r total_loggedin`** have logged in at least once.
+
+
+```{r general user information, fig.height=4, echo=FALSE}
+
+#chart of user information
+users_chart<- data.frame(x = c("Total Users","Users Who Logged In","Users Who Entered Tracker Data"), y = c(total_users, total_loggedin, total_users_auditted))
+
+
+ggplot(users_chart, aes(x= reorder(x, -y), y=y)) + 
+  xlab("") + ylab("Number of Users") +
+  geom_bar(stat = "sum") +
+  scale_x_discrete(labels = function(x) str_wrap(x, width = 15)) +
+  geom_text(aes(label = y), vjust = -.01) +
+  theme(legend.position = "none")
+
+
+#get a table of users by last login
+today<-as.Date(today)
+
+
+users_table <- users %>%
+  rename("last_Login"=userCredentials.lastLogin) %>%
+  transform(ifelse(!is.Date(last_Login), "NA", ymd_hms(last_Login))) %>%
+  mutate("today"=today) %>%
+  mutate("hours_since_lastLogin"=(difftime(today,last_Login, units=c("hours")))) %>%
+  rename("username" = userCredentials.username) %>%
+  select(username, displayName,last_Login, hours_since_lastLogin) %>%
+  arrange(desc(last_Login))
+   
+
+##get users full names and last logins, and user UIDs 
+DT::datatable(users_table, 
+              caption = "All users by last login",
+              extensions = 'Buttons', 
+              options = list(
+                pageLength = 5,
+                dom = 'Blfrtip', 
+                buttons = c('copy', 'csv', 'excel', 'pdf', 'print')))
+
+
+
+```
+<br>
+##User Audits by Stage
+We can extrapolate from this which program stages show the most frequent edits.
+
+Program stages are listed below, by order of overall number of edits.
+
+```{r edits by stage, echo=FALSE, fig.height=3}
+
+DT::datatable(edits_by_stage_all, 
+              caption = "All stages by number of edits",
+              extensions = 'Buttons', 
+              options = list(
+                pageLength = 5,
+                dom = 'Blfrtip', 
+                buttons = c('copy', 'csv', 'excel', 'pdf', 'print')))
+
+```
+
+###Heat Map of Stage and Hour
+Heat map by stage and hour that TEI edits were recorded. 
+Only shows the top 20 stages of edits, all others are grouped as "OTHER"
+
+```{r Heat map of stage by hour, echo=FALSE, fig.height=6}
+
+#for simplicity in charts, we will change everything but the top 20 stages to "OTHER"
+
+ugcharts_withhour<-edits_by_usergroup_stagehour %>%
+  arrange(name)
+
+ugcharts_nohour<-edits_by_usergroup_stagehour %>%
+  group_by(name) %>%
+  summarize("edits"=sum(edits))
+
+
+if(length(unique(ugcharts_nohour$name)) > 20) {
+  Top20 <- head(ugcharts_nohour
+                [order(ugcharts_nohour$edits, decreasing=TRUE),]$name, 20)
+  hiddenStages <-unique(ugcharts_withhour[!(ugcharts_withhour$name %in% Top20),]$name)
+  ugcharts_withhour[!(ugcharts_withhour$name %in% Top20),]$name <- "OTHER"
+} 
+
+subtitle_heat<-paste(hiddenStages, ",", collapse="")
+subtitle_heat<-paste("These stages are merged into 'OTHER' category: ",subtitle_heat, collapse="")
+
+
+#also update the overall chart we will use below
+
+edits_by_stage_hour <- edits_by_stage_hour %>%
+  group_by(name, hour) %>%
+  summarise("edits"=sum(edits))
+
+if(edits_by_stage_hour$name %in% hiddenStages){
+edits_by_stage_hour[edits_by_stage_hour$name %in% hiddenStages,]$name<-"OTHER"
+}  
+
+
+#set colors for charts below
+col1 = "#d8e1cf"  
+col2 = "#336600"
+
+
+#overall summary by hour and stagename
+ggplot(ugcharts_withhour, aes(hour,name)) + geom_tile(aes(fill = edits),colour = "white") +
+  scale_fill_gradient(low=col1, high=col2) +  
+  guides(fill=guide_legend(title="Total Edits")) +
+  labs(title = "TEI Edits by Stage Name and Hour",
+       x = "Hour", y = "Stage Name", subtitle = subtitle_heat) +
+      scale_y_discrete(labels = function(name) str_squish(name), position = "right") +
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), legend.position = "bottom")
+
+
+```
+
+##Tracker Audit Charts By Stage and Hour
+This shows edits by stage, for all users.
+
+The figure after shows edits by stage and hour, for all users.
+
+```{r overall charts, echo=FALSE, fig.align='center', fig.show='hold'}
+
+#first set the functions for generating the charts 
+
+get_p1<-function(x1){
+  p1<-ggplot(data=x1, aes(reorder(name,edits), y=edits, fill=name)) +
+  geom_bar(stat="sum") + 
+  guides(fill=FALSE) +
+  theme_bw() +
+  theme(legend.position = "none", axis.text.y = element_text(size=rel(.5))) +
+  labs(x = "Stages", y = "User Edits",
+     title = paste0("Overall Edits by stage")) +
+    scale_x_discrete(labels = function(name) str_wrap(name, width = 50)) +
+  theme(plot.caption = element_text(colour="firebrick"), 
+  plot.title = element_text(size = rel(.9)),
+  plot.subtitle = element_text(size=rel(.7)),
+  axis.title = element_text(size=rel(.5)))
+p1<-p1 + coord_flip()
+p1
+}
+
+
+get_p1(edits_by_stage_all)
+
+
+#plot 2: edits per hour of day for each stage for this user/userGroup
+get_p2<-function(x2){
+ p2<- ggplot(data=x2, aes(x=hour, y=edits, fill=name)) +
+  geom_bar(stat="identity") + 
+  guides(fill=FALSE) +
+  theme_bw() +
+  theme(legend.position = "none") +
+  geom_vline(xintercept=workhour_start - 0.5, size=rel(1), color="firebrick") +
+  geom_vline(xintercept=workhour_end, size=rel(1), color="firebrick") +
+  labs(y = "Edits", x = "Hour of Day",
+       subtitle = "Edits per hour (colors repesent stages in plot above)",
+       caption = "Red lines mark working hours") +
+  theme(plot.caption = element_text(colour="firebrick", size=rel(.8)), 
+        plot.subtitle = element_text(size=rel(.8)))
+ 
+ p2
+}
+
+
+get_p2(edits_by_stage_hour)
+
+```
+
+###Time Series Charts
+The following plot shows all tracker data "edits" during the selected time period. 
+Click and drag over a period to zoom in, and double click to zoom out. Scroll over a time period for edits and date.
+```{r Time series analysis, echo=FALSE}
+
+edits_by_dayhour<-all_tei_audits %>%
+  mutate(hour = hour(ymd_hms(created))) %>%
+   mutate(weekday = wday(created, 
+                        week_start = getOption("lubridate.week.start", 7), 
+                        label=TRUE)) %>%
+      group_by(weekday,hour) %>%
+      summarize("edits"=n())
+
+
+timeseries_edits<-xts(x=cbind(edits=edits_by_date$edits), order.by=edits_by_date$date)
+
+
+dygraphs::dygraph(timeseries_edits, main = "All Tracker Data Edits Over Time") %>%
+  dySeries("edits", label = "Edits") %>%
+  dyRangeSelector(height = 20)
+
+
+
+
+```
+
+
+An exploration by day of week and time edits occurred
+```{r chart by hour and time of day, echo=FALSE}
+
+ggplot(edits_by_dayhour, aes(x = hour, y = edits)) + 
+  geom_line(aes(color = weekday), size=1.2) +
+  theme_minimal() +
+  facet_wrap(~weekday) +
+  theme(legend.position = "none") +
+  labs(title="Edits By Time and Day of Week")
+
+
+```
+<br>
+
+## Users and User Groups {.tabset .tabset-fade}
+
+Usage patterns can look very different when down to the user level.
+
+Below is a user who had many tracker interactions within work hours, and one who did not.
+```{r sample users, out.width=c('50%', '50%'), fig.show='hold'}
+
+
+get_p2(edits_by_user_stagehour %>% filter(modifiedBy==ex1))
+get_p2(edits_by_user_stagehour %>% filter(modifiedBy==ex2))
+
+
+```
+
+<br>
+
+###User Groups 
+
+In total, `r length(unique(ugcharts_withhour$usergroup))` different user groups have entered tracker data.
+
+Graph showing top stages by hour for each user group are found at directory `r getwd()` E.g. at `r paste0(getwd(),"/plots/usergroups")`
+
+Below are the user groups with the most user interactions ("edits") in tracker. 
+
+```{r top user groups, echo=FALSE,message=FALSE, fig.height=2}
+
+#create our list of user groups
+usergroups_list <- unique(ugcharts_withhour$usergroup)
+#apply charting function across the list of users
+ug<-lapply(usergroups_list, function(x) {
+
+  usergroup_charted <- ugcharts_withhour %>%
+    filter(x == usergroup) %>%
+    arrange(edits)
+  
+  #set the number of user per group
+  users_in_group<-edits_by_user_usergroup %>%
+    filter(x ==  usergroup) %>%
+    summarize("n"=n())
+
+  
+  #charting function
+ z<- tableGrob( c(x, paste0("users: ",users_in_group$n)))
+    allplots<- plot_grid(z,
+                         get_p1(usergroup_charted),
+                         get_p2(usergroup_charted),
+                         ncol=1, 
+                         rel_heights = c(2,10,7))
+
+#save all plots as their names without special characters
+ugroup_title<-gsub("[^A-Za-z0-9,;._-]","",x)
+gtitle<- paste0("plots/usergroups/usergroup_",ugroup_title,".png")
+
+save_plot(gtitle, allplots, base_aspect_ratio = 1.3)
+ 
+ })
+
+
+
+
+usergroup_plots<-list.files("plots/usergroups",full.names = TRUE)
+
+names(usergroup_plots)<-str_replace_all(usergroup_plots,
+                                        c("\\.png" = "", 
+                                        "plots/usergroups/" = ""))
+
+bsselectR::bsselect(usergroup_plots, type = "img", selected = usergroup_plots[1], 
+         live_search = TRUE, show_tick = TRUE)
+
+#create the table of common user groups
+
+DT::datatable(edits_by_usergroup_all, extensions = 'Buttons', options = list(
+  dom = 'Blfrtip', buttons = c('copy', 'csv', 'excel', 'pdf', 'print')))
+
+
+```
+
+
+Graphs showing top stages by hour for each username are found at directory `r paste0(getwd(),"/plots/users")`
+
+
+
+###Individual Users 
+
+Below are the usernames with the most freqent user interactions ("edits") in tracker. 
+
+```{r top users, echo=FALSE, eval=FALSE, fig.height=2}
+
+#create our list of user groups
+users_auditted_list <- unique(edits_by_user_stagehour$modifiedBy)
+
+#apply charting function across the list of users
+us<-lapply(users_auditted_list, function(x) {
+
+  user_charted <- edits_by_user_stagehour %>%
+    filter(x == modifiedBy) %>%
+    arrange(edits)
+  
+  #get last login
+  user_info<-users_table %>%
+    filter(x ==  username) %>%
+    select(last_Login, displayName)
+  
+
+  #charting function
+ z<- tableGrob( c(x, paste0("Last Login: ",user_info$last_Login),
+                     paste0("Name: ", user_info$displayName)))
+ 
+    allplots<- plot_grid(z,
+                         get_p1(user_charted),
+                         get_p2(user_charted),
+                         ncol=1, 
+                         rel_heights = c(2,10,7))
+
+#save all plots as their names without special characters
+user_title<-gsub("[^A-Za-z0-9,;._-]","",x)
+gtitle<- paste0("plots/users/user_",user_title,".png")
+
+save_plot(gtitle, allplots, base_aspect_ratio = 1.3)
+
+ })
+
+
+users_plots<-list.files("plots/users",full.names = TRUE)
+
+
+names(users_plots)<-str_replace_all(users_plots,
+                                        c("\\.png" = "", 
+                                        "plots/users" = ""))
+
+
+bsselectR::bsselect(users_plots, type = "img", selected = users_plots[1], 
+         live_search = TRUE, show_tick = TRUE)
+
+#create the table of common user groups
+
+##get users full names and last logins, and user UIDs
+DT::datatable(edits_by_user_all, 
+              caption = "All users by most tracker edits",
+              extensions = 'Buttons', 
+              options = list(
+                pageLength = 5,
+                dom = 'Blfrtip', 
+                buttons = c('copy', 'csv', 'excel', 'pdf', 'print')))
+
+
+```
+
+
+
+##"Sessions" and Users-Per-Event
+Here we convert the TEI audit log to show time between first and last auditted change.
+this should give a sense of quality as well.
+
+We define a "session" as one or more auditted changes to an event by a single user in a calendar month. The session length is the time spent on this event in seconds.
+
+
+```{r stage sessions, echo=FALSE, fig.align='center',}
+
+sessions_by_stage <- all_tei_audits %>%
+  left_join(psi, by = c("programStageInstance.id" = "event")) %>%
+  left_join(ps, by = c("programStage" = "id")) %>%
+  drop_na("name") %>%
+  transform(created = ymd_hms(created)) %>%
+  mutate(month = month(ymd_hms(created))) %>%
+  mutate(year = year(ymd_hms(created))) %>%
+  mutate(yearmonth= paste0(year, "-",month)) %>%
+  group_by(modifiedBy, programStageInstance.id, yearmonth) %>%
+  mutate(latest_session_entry = as.POSIXct(max(created))) %>%
+  mutate(earliest_session_entry = as.POSIXct(min(created))) %>%
+  mutate(session=as.numeric(difftime(latest_session_entry,
+                          earliest_session_entry, tz="UTC", "secs"))) %>%
+  mutate(session_length = case_when(
+    session <= 5 ~ "very_short (< 5sec)", 
+    session > 5 & session < 60 ~ "short (5sec- 1min)",
+    session >= 60 & session < 600 ~ "expected (1-10min)",
+    session >=  600 & session < 3600 ~ "long (10-60min)",
+    session >=  3600  ~ "very_long (>60min)"
+  ))
+
+
+#summarize and eliminate stages with not enough sessions
+
+session_summary <- sessions_by_stage %>%
+group_by(name, session_length) %>%
+ tally() %>%
+  mutate(percent=n/sum(n)) %>%
+  rename("total_sessions" = n) %>%
+  arrange(name,session_length,desc(percent))
+
+ 
+DT::datatable(session_summary, 
+              caption = "session duration by stage",
+              extensions = 'Buttons', 
+              options = list(
+                pageLength = 5,
+                dom = 'Blfrtip', 
+                buttons = c('copy', 'csv', 'excel', 'pdf', 'print')))
+ 
+
+top_stages_by_session<-session_summary %>%
+  group_by(name) %>%
+  summarize("total"=sum(total_sessions)) %>%
+  arrange(desc(total))
+
+session_summary<-session_summary %>%
+  inner_join(head(top_stages_by_session, 10), by="name")
+
+##just do this for the 10 most common stages
+ session_plot <- ggplot(data=session_summary, aes(x=reorder(name, percent), 
+                                                  y=percent, fill=session_length)) +
+  geom_bar(stat="identity") + 
+  theme_bw() +
+     labs(x = "Percent of All Sessions", y = "Stage",
+     title = paste0("Session Duration for Top 10 Stages with Most Sessions")) +
+    scale_x_discrete(labels = function(name) str_wrap(name, width = 50)) +
+   coord_flip()
+ 
+ ggplotly(session_plot)
+ 
+ #ggplot(session_summary, aes(x = name, y = n, fill = session_length)) + 
+  #  geom_bar(position = "fill",stat = "identity") +
+   # scale_y_continuous(labels = scales::percent_format())  +
+   #coord_flip()
+``` 
+
+###Bubble Chart of Tracker Sessions
+The next section considers each stage by median session duration, number of sessions, and number of overall edits.
+
+For clarity, only stage-sessions of 1-10 minutes in length are analyzed, and only the stages in the top 10 session count are plotted.
+
+```{r session bubble chart, echo=FALSE, fig.height=5}
+###interactive bubble plot doesnt work that well!       
+bubble_plot_data <-sessions_by_stage %>%
+  group_by(name) %>%
+  filter(session_length=="expected (1-10min)") %>%
+  semi_join(head(top_stages_by_session, 10), by="name") %>%
+  mutate("median_seconds"=median(round(session),2)) %>%
+  left_join(session_summary,by="name") %>%
+  mutate("total_sessions" = sum(total_sessions)) %>%
+  group_by(name,median_seconds,total_sessions) %>%
+  select(name,median_seconds,total_sessions) %>%
+  distinct()
+
+
+bubble_plot_data<-bubble_plot_data %>%
+  left_join(edits_by_stage_all, by=c("name")) %>%
+  select("name","median_seconds","total_sessions", "total_edits"="edits")
+
+
+
+p <- bubble_plot_data %>%
+  ggplot( aes(median_seconds, total_sessions, size = total_edits, color=name)) +
+  geom_point() +
+  theme_bw() +
+  labs(title = "Analysis of Sessions for Each Stage", ylab="Unique sessions", xlab="Median Seconds") +
+  theme(legend.position = "none")
+
+
+
+ggplotly(p)
+
+
+```
+
+###Session Duration by Users
+We can get the same details by user. A user with sessions that are too long may require more training.
+
+```{r sessions by users, echo=FALSE}
+ sessions_by_user<- sessions_by_stage %>%
+  ungroup() %>%
+   group_by(modifiedBy) %>%
+  mutate("median_seconds"=median(seconds(session))) %>%
+   group_by(modifiedBy, median_seconds, session_length) %>%
+   count() %>%
+   mutate("median_mins"=round((median_seconds/60),2) ) %>%
+   arrange(desc(median_mins),session_length) %>%
+   ungroup() %>%
+   select("username"="modifiedBy","median_mins","session_length","total sessions"="n")
+
+ 
+DT::datatable(sessions_by_user, 
+              caption = "session duration by user",
+              extensions = 'Buttons', 
+              options = list(
+                pageLength = 5,
+                dom = 'Blfrtip', 
+                buttons = c('copy', 'csv', 'excel', 'pdf', 'print')))
+
+
+quote<-"'"
+#Here we get a simple listing of events where multiple users editted the same stage.
+ psi_users <-all_tei_audits %>%
+  left_join(psi, by = c("programStageInstance.id" = "event")) %>%
+  left_join(ps, by = c("programStage" = "id")) %>%
+   group_by(name, programStageInstance.id) %>%
+   summarise("users"=n_distinct(modifiedBy)) %>%
+   filter(users>1) %>%
+   transform("Event"=paste0("'<a href=\"",baseurl,"api/events/",programStageInstance.id,"\">Link Here</a>'")) %>%
+     select("name","Event","users") %>%
+   arrange(desc(users))
+   
+```
+
+###Events With Multiple Users Submitting Data
+Here we get a simple listing of events where multiple users editted the same stage. 
+ 
+`r length(psi_users)` events had multiple users submit data. This may be evidence of data tampering!
+ 
+You can search for these event UIDs through the API for more details. 
+ 
+
+```{r multiple users per stage, echo=FALSE}
+
+DT::datatable(psi_users, 
+              caption = "Events Where Multiple Users Submitted Data",
+              escape = FALSE,
+              extensions = 'Buttons', 
+              options = list(
+                pageLength = 5,
+                dom = 'Blfrtip', 
+                buttons = c('copy', 'csv', 'excel', 'pdf', 'print')))
+
+
+```
+
+```{r test crap, eval=FALSE, echo=FALSE}
+#comment out this test
+#edits_by_userGroup<-edits_by_user %>%
+ # left_join(users, by = c("modifiedBy" = "userCredentials.username")) %>%
+#  filter(modifiedBy %in% ugroups$users[10])
+
+##crosstalk doesnt look like it will work with heatmap!
+library(crosstalk)
+library(DT)
+library(d3heatmap)
+
+d<-edits_by_user_stage_dayhour %>%
+  ungroup() %>%
+  group_by(displayName, hour) %>%
+  arrange(desc(displayName,edits)) %>%
+  select("displayName", "hour","edits")
+
+
+d$edits<-as.numeric(d$edits)
+
+
+##plotly works!!
+library(plotly)
+
+
+#sd<-SharedData$new(d)
+#hlight<-highlight_key(sd)
+
+#dtab<-datatable(sd, caption = "Users with most frequent interactions")
+#p<-plotly::plot_ly(sd, 
+                   x=~hour,y=~displayName,z=~edits, 
+                   colorscale = "Grey", type="heatmap", autosize=TRUE)
+
+bscols(p, dtab, widths = 12)
+
+
+#gtitle_names<-gsub("[^A-Za-z0-9,;._-]","",usergroups_list)
+#gtitles_full<- paste0("usergroup_",gtitle_names,".png")
+
+#purrr::pwalk(list(gtitles_full, plots), ggsave, path = "plots", dpi = 500)
+#pwalk(list(paths, plots), ggsave, path = "plots", dpi = 300)
+
+#can we pre-select a filter in data table?? then make 
