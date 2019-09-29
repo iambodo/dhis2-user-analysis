@@ -5,6 +5,10 @@ output:
     toc: true
     toc_float: true
     toc_depth: 4
+params:
+  fake_displayNames: false
+  save_usergroup_charts: true
+  save_user_charts: true
 ---
 
 ```{r setup, include=FALSE, echo = TRUE}
@@ -15,18 +19,18 @@ options(encoding = "UTF-8")
 #IMPORTANT MANUAL STEPS BEFORE RUNNING
 #credentials and global variables#
 #(include https://  and last backslash of DHIS2 URL, in quotes)
-baseurl<-"https://bd-eregistry.dhis2.org/dhis/"
-username<-"ing_test"
-#you will be prompted for password
+baseurl<-"https://hrhr.dhis2.org/dhis/"
+username<-"admin"
+#you will be prompted for password upon knitting the document
 
 #workhour start and end in 24 hr format, no quotes
 workhour_start<-9
 workhour_end<-17
 
 #analysis time period in yyyy-mm-dd format.
-#if blank, will use today's date as start date, and 1 year ago today as end date
-startdate<- "2014-01-21"
+#if blank, will use today's date as end date, and 1 year ago today as start date
 enddate<-""
+startdate<- "2017-01-01"
 
 
 ##______Now load packages and set up_____##
@@ -47,12 +51,6 @@ load_or_install<-function(required_packages) {
 load_or_install(required_packages)
 devtools::install_github("walkerke/bsselectR")
 
-
-#IMPORTANT MANUAL STEPS BEFORE RUNNING
-#credentials and global variables#
-#(include https;//  and last backslash of baseurl, in quotes)
-baseurl<-"https://bd-eregistry.dhis2.org/dhis/"
-username<-"ing_test"
 #youll now be prompted for password
 require(keyring)
 keyring::key_set("Password", username=username)
@@ -60,6 +58,7 @@ keyring::key_set("Password", username=username)
 
 ##validations of entered dates and hours
 today<-Sys.Date()
+today_time<-Sys.time()
 IsDate <- function(mydate, date.format = "%Y-%m-%d") {
   tryCatch(!is.na(as.Date(mydate, date.format)),  
            error = function(err) {FALSE})  
@@ -85,21 +84,20 @@ workhour_start<-as.numeric(workhour_start)
 workhour_end<-as.numeric(workhour_end)
 
 wd<-getwd()
+fake_displayNames<-params$fake_displayNames
 
 ```
 
 
-Analyzing user-level data for `r baseurl`. 
+Analyzing user-level tracker data for `r baseurl`. 
 
 
 ##Description
-DHIS2 keeps a log of every entry of a data element into a tracker program at the */trackedentitydatavalueaudit* API endpoint, including username and timestamp.
+DHIS2 keeps a log of every entry of a data element into a tracker program at the */trackedentitydatavalueaudit* API endpoint, including username and timestamp. From these data, we can analyze user interactions with tracker data elements, referred to as *edits* in tables below. For more details on the tracker audit log, see the [DHIS2 developer guide](https://docs.dhis2.org/master/en/developer/html/dhis2_developer_manual_full.html).
 
-With these data, we can analyze user activity with tracker data elements, referred to as *edits* in tables.
+The selected date range for analysis is between **`r startdate`** and **`r enddate`**. 
 
-The selected dates for analysis are between * `r startdate` * and * `r enddate` *
-
-First, check to see that log in is valid.
+First, we check to see that the provided log in is valid.
 ```{r login, echo=FALSE, message=TRUE, warning=FALSE, paged.print=FALSE}
 ##test of logging in
 library(keyring)
@@ -117,23 +115,8 @@ if(loginDHIS2(baseurl,username)){
 ```
 
 
-```{r pull data by API, echo=FALSE, message=FALSE}
-#Here we'll see if we can pull data directly from tei API and manipulate
-
-####priorities
-#get all tables through API - done
-
-#tab for users and tab for user groups - done
-#time series by hour, with lines per day of week 0- done
-
-#apply these data to the charting and DT functions -  done
-#folders for users and user groups graphics - done
-
-#heatmap by stage x hour
-#link the data table and the heatmap with link to users list - send this as stackoverflow question
-
-#"sessions" = time working on a program stage - done
-
+```{r pull data by API_1, echo=FALSE, message=FALSE}
+#Here we'll pull data directly from tei API and manipulate
 
 #get ALL tei audit from url
 library(jsonlite)
@@ -142,14 +125,28 @@ all_tei_audits<-as.data.frame(suppressMessages(
   jsonlite::fromJSON(content(GET(url),"text"), flatten = TRUE)[[1]]))
 
 
-
 #get user info
 url<-paste0(baseurl,"api/users.json?fields=id,displayName,userGroups,user,userCredentials[lastLogin,username]&paging=false")
 
 users<-as.data.frame(suppressMessages(
   jsonlite::fromJSON(content(GET(url),"text"), flatten = TRUE)[[1]]))
+```
 
 
+```{r fake name insertion, echo=FALSE, eval=fake_displayNames }
+#this section anonymizes the displayNames of users with random star wars names
+#set based on parameter "fake_displayNames" above
+n_names<-length(users$id)
+url<-paste0("http://names.drycodes.com/",n_names,"?nameOptions=starwarsFirstNames")
+fake_names<-jsonlite::fromJSON(content(GET(url),"text"), flatten = TRUE)
+
+users <- users %>% 
+  mutate(fake_names) %>%
+  select(-displayName) %>%
+  rename("displayName"="fake_names")
+```
+
+```{r pull data by API_2, echo=FALSE, message=FALSE}
 #summarize tei audit data by user
 library(dplyr)
 all_audit_summary<-all_tei_audits %>%
@@ -171,13 +168,9 @@ We've now pulled audit log and some metadata from API.
 
 The TrackedEntityDataValue table shows **`r auditted_updates` UPDATES** and **`r auditted_deletions` DELETIONS**.
 
-An update may be a _new_ data value being entered into a stage, _or_ editing an existing value. A deletion is an erasure of an existing data value.
+An update may be a _new_ data value being entered into a stage, _or_ editing an existing value. A deletion is an erasure of an existing data value. For simplicity tables below refer to updates and deletions together as *edits*.
 
-For simplicity we can refer to these together as *edits*.
-
-See the [DHIS2 developer guide](https://docs.dhis2.org/master/en/developer/html/dhis2_developer_manual_full.html) for details.
-
-This table shows all users who entered tracker data by number of deletions and updates.
+This table shows all users who entered tracker data by number of deletions and updates. You can expand the table, or search for a given user.
 
 ```{r user audit full, echo=FALSE}
 ##get users full names and last logins, and user UIDs
@@ -227,7 +220,8 @@ ugroups<-as.data.frame(suppressMessages(
 ```
 
 
-Now, we can merge this with other metadata
+
+Now, we can merge audit data with other metadata.
 ```{r now merge data, echo=FALSE}
 #summary merging user info
 
@@ -285,12 +279,20 @@ users_by_dayhour<-edits_by_user_stage_dayhour %>%
   arrange(desc(weekday,edits)) %>%
   summarize("n_users"= n_distinct(modifiedBy))
 
+users_by_date_hour<-all_tei_audits %>%
+    mutate(date = date(ymd_hms(created))) %>%
+    mutate(hour = hour(ymd_hms(created))) %>%
+    group_by(date,hour) %>%
+    arrange(desc(date, hour)) %>%
+    summarize("n_users"= n_distinct(modifiedBy))
+
 
 edits_by_date<-all_tei_audits %>%
     mutate(date = date(ymd_hms(created))) %>%
   group_by(date,modifiedBy) %>%
   arrange(desc(date)) %>%
       summarize(edits=n())
+
 
 ```
 
@@ -366,7 +368,7 @@ edits_by_user_all<-edits_by_user_stagehour %>%
 
 #for overal users charts below
 
-total_users<-length(unique(users$displayName))
+total_users<-length(unique(users$id))
 total_loggedin<-length(na.omit(users$userCredentials.lastLogin))
 total_users_auditted<-length(unique(edits_by_user$modifiedBy))
 
@@ -381,22 +383,23 @@ user_stats<-edits_by_user_all %>%
 top_users <-  user_stats %>%
   filter(percent_at_work > benchmark & all_edits > median_edits)
 
+
 rando_users<- user_stats %>%
   filter(percent_at_work < meanh & all_edits > median_edits)
 
 ex1<-sample(top_users$username, 1)
-ex2<-sample(top_users$username, 1)
+ex2<-sample(rando_users$username, 1)
 
 
 ```
 
-<br>
-##User Details - Who Enters Tracker Data?
-Now pull data on user activity from TEI audit log and pull user info from API.
+
+##Who Uses This Tracker System?
+We have merged the tracker audit data with other user information stored in DHIS2.
 
 The audit log shows **`r length(unique(edits_by_stage_all$name))`** unique program stages with data, entered by **`r total_users_auditted`** unique users.
 
-Overall, **`r total_users`** users have accounts, and **`r total_loggedin`** have logged in at least once.
+Overall, **`r total_users`** users have accounts, and **`r total_loggedin`** have logged in at least once. (Note: some users may have been deleted since they entered tracker data.)
 
 
 ```{r general user information, fig.height=4, echo=FALSE}
@@ -415,7 +418,6 @@ ggplot(users_chart, aes(x= reorder(x, -y), y=y)) +
 
 #get a table of users by last login
 today<-as.Date(today)
-
 
 users_table <- users %>%
   rename("last_Login"=userCredentials.lastLogin) %>%
@@ -436,14 +438,96 @@ DT::datatable(users_table,
                 dom = 'Blfrtip', 
                 buttons = c('copy', 'csv', 'excel', 'pdf', 'print')))
 
+#get server date and current date info
+localdate<-lubridate::ymd_hms(Sys.time())
+localtime<-paste(hour(localdate),minute(localdate), sep=":")
+url<-paste0(baseurl,"api/system/info")
+serverinfo<-as.data.frame(suppressMessages(
+  jsonlite::fromJSON(content(GET(url),"text"), flatten = TRUE)))
+serverdate<-ymd_hms(serverinfo$serverDate)
+servertime<-paste(hour(serverdate),minute(serverdate), sep=":")
 
 
 ```
-<br>
-##User Audits by Stage
-We can extrapolate from this which program stages show the most frequent edits.
 
-Program stages are listed below, by order of overall number of edits.
+##Distinct Tracker Users by Hour
+On average, _how many users enter tracker data every hour of the day?_ This should give a sense of "concurrent users" and server load during the work day.
+
+**Note**: The charts below show mean distinct users entering tracker data in each date-hour. If a given date did not have more than one user enter tracker data, the date is excluded. Also note, the server timestamp is currently `r servertime`, while the local time of report analysis is `r localtime`.
+
+```{r distinct users by hour, echo=FALSE, fig.height=3, fig.width=4}
+
+#average users with tracker data entered on each hour
+#if there were 1 or fewer users editing tracker data on that date, the date is excluded
+users_by_hour_base <-users_by_date_hour %>%
+  group_by(date) %>%
+  mutate(userhours_this_date = sum(n_users)) %>%
+  filter(userhours_this_date > 1) %>%
+  complete(hour = seq(from=0,to=24)) %>%
+  mutate(n_users = replace_na(n_users, 0))
+
+users_by_hour_avg <-users_by_hour_base %>%
+  group_by(hour) %>%
+  summarize(mean_tracker_users = round(mean(n_users), 2))
+
+users_by_hour_avg_recent <-users_by_hour_base %>%
+  filter(date > (enddate - 30)) %>%
+  group_by(hour) %>%
+  summarize(mean_tracker_users = round(mean(n_users), 2))
+
+peak_users<- users_by_hour_avg %>%
+filter(mean_tracker_users == max(mean_tracker_users)) %>%
+  head(1)
+
+```
+
+
+During the analysis period, the daily peak period is `r peak_users$hour` hours. On a typical workday, `r peak_users$mean_tracker_users` users are entering tracker data at that hour.
+
+```{r users by hour plots, echo=FALSE, out.width=c('50%','50%'), fig.show='hold'}
+
+ggplot(users_by_hour_avg, aes(x = hour, y = mean_tracker_users)) +
+  geom_line(color = "steelblue") +
+  theme_minimal() +
+  theme(legend.position = "left") +
+  labs(title="Mean Distinct Users By Hour", 
+       subtitle=paste0("Dates between ", startdate, " and ", enddate))
+
+
+ggplot(users_by_hour_avg_recent, aes(x = hour, y = mean_tracker_users)) +
+  geom_line(color = "steelblue") +
+  theme_minimal() +
+  theme(legend.position = "left") +
+  labs(title="Distinct Users By Hour, Last 30 Days", 
+       subtitle=paste0("Dates between ", enddate - 30, " and ", enddate))
+
+
+```
+
+
+```{r distinct users by weekday hour, eval=true, fig.width=8}
+users_by_weekday_hour_avg<-users_by_hour_base %>%
+  mutate(weekday = wday(date, 
+                        week_start = getOption("lubridate.week.start", 7), 
+                        label=TRUE)) %>%
+  group_by(weekday, hour) %>%
+  summarize(mean_tracker_users = round(mean(n_users), 2))
+  
+
+
+ggplot(users_by_weekday_hour_avg, aes(x = hour, y = mean_tracker_users)) + 
+  geom_line(aes(color = weekday), size=1.2) +
+  theme_minimal() +
+  facet_wrap(~weekday) +
+  theme(legend.position = "none") +
+  labs(title="Mean Distinct Users By Hour and Day of Week")
+
+```
+
+##Tracker Edits by Stage
+We now merge with program stage data to understand which program stages show the most frequent edits.
+
+Program stages are listed below, by decreasing order of overall edits.
 
 ```{r edits by stage, echo=FALSE, fig.height=3}
 
@@ -458,8 +542,7 @@ DT::datatable(edits_by_stage_all,
 ```
 
 ###Heat Map of Stage and Hour
-Heat map by stage and hour that TEI edits were recorded. 
-Only shows the top 20 stages of edits, all others are grouped as "OTHER"
+The distribution of stage edits by hour are displayed below in a heat map by stage and hour that TEI edits were recorded. This graphic focuses on the top 20 stages by number of edits-- all remaining stages are grouped as "OTHER"
 
 ```{r Heat map of stage by hour, echo=FALSE, fig.height=6}
 
@@ -514,11 +597,9 @@ ggplot(ugcharts_withhour, aes(hour,name)) + geom_tile(aes(fill = edits),colour =
 ```
 
 ##Tracker Audit Charts By Stage and Hour
-This shows edits by stage, for all users.
+The figure below shows edits by stage, for all users. The following figure shows edits by stage and hour, for all users. These graphics are reproduced for each user and user group in subsequent sections.
 
-The figure after shows edits by stage and hour, for all users.
-
-```{r overall charts, echo=FALSE, fig.align='center', fig.show='hold'}
+```{r overall charts, echo=FALSE, fig.align='center', fig.show='hold', fig.height=5}
 
 #first set the functions for generating the charts 
 
@@ -569,7 +650,7 @@ get_p2(edits_by_stage_hour)
 ###Time Series Charts
 The following plot shows all tracker data "edits" during the selected time period. 
 Click and drag over a period to zoom in, and double click to zoom out. Scroll over a time period for edits and date.
-```{r Time series analysis, echo=FALSE}
+```{r Time series analysis, echo=FALSE, fig.height=4}
 
 edits_by_dayhour<-all_tei_audits %>%
   mutate(hour = hour(ymd_hms(created))) %>%
@@ -587,14 +668,11 @@ dygraphs::dygraph(timeseries_edits, main = "All Tracker Data Edits Over Time") %
   dySeries("edits", label = "Edits") %>%
   dyRangeSelector(height = 20)
 
-
-
-
 ```
 
 
-An exploration by day of week and time edits occurred
-```{r chart by hour and time of day, echo=FALSE}
+An exploration by day of week and time edits occurred.
+```{r chart by hour and time of day, echo=FALSE,  fig.width=8}
 
 ggplot(edits_by_dayhour, aes(x = hour, y = edits)) + 
   geom_line(aes(color = weekday), size=1.2) +
@@ -605,38 +683,36 @@ ggplot(edits_by_dayhour, aes(x = hour, y = edits)) +
 
 
 ```
-<br>
 
-## Users and User Groups {.tabset .tabset-fade}
 
-Usage patterns can look very different when down to the user level.
+##Users and User Groups
 
-Below is a user who had many tracker interactions within work hours, and one who did not.
+Tracker usage patterns can look very different when down to the user level.
+
+On the left is a typical user ( `r ex1` )  who had many tracker interactions within work hours, and on the right is a user ( `r ex2` ) who had comparitively few interactions during work.
+
+
 ```{r sample users, out.width=c('50%', '50%'), fig.show='hold'}
-
 
 get_p2(edits_by_user_stagehour %>% filter(modifiedBy==ex1))
 get_p2(edits_by_user_stagehour %>% filter(modifiedBy==ex2))
 
-
 ```
 
-<br>
 
 ###User Groups 
-
 In total, `r length(unique(ugcharts_withhour$usergroup))` different user groups have entered tracker data.
 
-Graph showing top stages by hour for each user group are found at directory `r getwd()` E.g. at `r paste0(getwd(),"/plots/usergroups")`
+Graphs showing top stages by hour for each user group are found at directory `r getwd()` E.g. at `r paste0(getwd(),"/plots/usergroups")`
 
-Below are the user groups with the most user interactions ("edits") in tracker. 
+Below are the user groups with the most user interactions ("edits") in tracker. Click the selector box to find a certain uesr group.
 
-```{r top user groups, echo=FALSE,message=FALSE, fig.height=2}
+```{r top user groups, echo=FALSE, message=FALSE, fig.height=2, eval=params$save_usergroup_charts}
 
 #create our list of user groups
 usergroups_list <- unique(ugcharts_withhour$usergroup)
 #apply charting function across the list of users
-ug<-lapply(usergroups_list, function(x) {
+ug<-lapply(usergroups_list, function(x) { 
 
   usergroup_charted <- ugcharts_withhour %>%
     filter(x == usergroup) %>%
@@ -654,7 +730,7 @@ ug<-lapply(usergroups_list, function(x) {
                          get_p1(usergroup_charted),
                          get_p2(usergroup_charted),
                          ncol=1, 
-                         rel_heights = c(2,10,7))
+                         rel_heights = c(2,8,6))
 
 #save all plots as their names without special characters
 ugroup_title<-gsub("[^A-Za-z0-9,;._-]","",x)
@@ -673,13 +749,19 @@ names(usergroup_plots)<-str_replace_all(usergroup_plots,
                                         c("\\.png" = "", 
                                         "plots/usergroups/" = ""))
 
-bsselectR::bsselect(usergroup_plots, type = "img", selected = usergroup_plots[1], 
+selected1<-names(usergroup_plots[1])
+
+bsselectR::bsselect(usergroup_plots, type = "img", selected = selected1, 
          live_search = TRUE, show_tick = TRUE)
 
 #create the table of common user groups
-
-DT::datatable(edits_by_usergroup_all, extensions = 'Buttons', options = list(
-  dom = 'Blfrtip', buttons = c('copy', 'csv', 'excel', 'pdf', 'print')))
+DT::datatable(edits_by_usergroup_all, 
+              caption = "All user groups by most tracker edits during work",
+              extensions = 'Buttons', 
+              options = list(
+                pageLength = 5,
+                dom = 'Blfrtip', 
+                buttons = c('copy', 'csv', 'excel', 'pdf', 'print')))
 
 
 ```
@@ -690,10 +772,9 @@ Graphs showing top stages by hour for each username are found at directory `r pa
 
 
 ###Individual Users 
-
 Below are the usernames with the most freqent user interactions ("edits") in tracker. 
 
-```{r top users, echo=FALSE, eval=FALSE, fig.height=2}
+```{r top users, echo=FALSE, message=FALSE, fig.height=3, eval=params$save_user_charts}
 
 #create our list of user groups
 users_auditted_list <- unique(edits_by_user_stagehour$modifiedBy)
@@ -719,7 +800,7 @@ us<-lapply(users_auditted_list, function(x) {
                          get_p1(user_charted),
                          get_p2(user_charted),
                          ncol=1, 
-                         rel_heights = c(2,10,7))
+                         rel_heights = c(2,8,6))
 
 #save all plots as their names without special characters
 user_title<-gsub("[^A-Za-z0-9,;._-]","",x)
@@ -737,15 +818,16 @@ names(users_plots)<-str_replace_all(users_plots,
                                         c("\\.png" = "", 
                                         "plots/users" = ""))
 
+selected2<-names(users_plots[1])
 
-bsselectR::bsselect(users_plots, type = "img", selected = users_plots[1], 
+bsselectR::bsselect(users_plots, type = "img", selected = selected2, 
          live_search = TRUE, show_tick = TRUE)
 
 #create the table of common user groups
 
 ##get users full names and last logins, and user UIDs
 DT::datatable(edits_by_user_all, 
-              caption = "All users by most tracker edits",
+              caption = "All users by most tracker edits during work",
               extensions = 'Buttons', 
               options = list(
                 pageLength = 5,
@@ -758,13 +840,12 @@ DT::datatable(edits_by_user_all,
 
 
 ##"Sessions" and Users-Per-Event
-Here we convert the TEI audit log to show time between first and last auditted change.
-this should give a sense of quality as well.
+In this section, we convert the TEI audit log to show time between first and last auditted change. It can be useful to use session duration as a proxy for data entry speed to give a sense of data quality.
 
-We define a "session" as one or more auditted changes to an event by a single user in a calendar month. The session length is the time spent on this event in seconds.
+We define a "session" as one or more auditted changes to an event by a single user in a calendar month. The session length is the length of time spent on this event in seconds.
 
 
-```{r stage sessions, echo=FALSE, fig.align='center',}
+```{r stage sessions, echo=FALSE, fig.align='center',fig.width=9}
 
 sessions_by_stage <- all_tei_audits %>%
   left_join(psi, by = c("programStageInstance.id" = "event")) %>%
@@ -793,7 +874,7 @@ sessions_by_stage <- all_tei_audits %>%
 session_summary <- sessions_by_stage %>%
 group_by(name, session_length) %>%
  tally() %>%
-  mutate(percent=n/sum(n)) %>%
+  mutate(percent=100*round(n/sum(n),4)) %>%
   rename("total_sessions" = n) %>%
   arrange(name,session_length,desc(percent))
 
@@ -897,7 +978,6 @@ DT::datatable(sessions_by_user,
                 buttons = c('copy', 'csv', 'excel', 'pdf', 'print')))
 
 
-quote<-"'"
 #Here we get a simple listing of events where multiple users editted the same stage.
  psi_users <-all_tei_audits %>%
   left_join(psi, by = c("programStageInstance.id" = "event")) %>%
@@ -908,15 +988,15 @@ quote<-"'"
    transform("Event"=paste0("'<a href=\"",baseurl,"api/events/",programStageInstance.id,"\">Link Here</a>'")) %>%
      select("name","Event","users") %>%
    arrange(desc(users))
-   
+
 ```
 
 ###Events With Multiple Users Submitting Data
 Here we get a simple listing of events where multiple users editted the same stage. 
  
-`r length(psi_users)` events had multiple users submit data. This may be evidence of data tampering!
+In total, `r length(psi_users$Event)` events had multiple users submit data within the selected period. This may suggest evidence of data tampering!
  
-You can search for these event UIDs through the API for more details. 
+By clicking on any event ID link, you can browse the API for more details. 
  
 
 ```{r multiple users per stage, echo=FALSE}
@@ -930,49 +1010,28 @@ DT::datatable(psi_users,
                 dom = 'Blfrtip', 
                 buttons = c('copy', 'csv', 'excel', 'pdf', 'print')))
 
-
 ```
 
-```{r test crap, eval=FALSE, echo=FALSE}
-#comment out this test
-#edits_by_userGroup<-edits_by_user %>%
- # left_join(users, by = c("modifiedBy" = "userCredentials.username")) %>%
-#  filter(modifiedBy %in% ugroups$users[10])
 
-##crosstalk doesnt look like it will work with heatmap!
-library(crosstalk)
-library(DT)
-library(d3heatmap)
+##End Analysis
+_Time to complete analysis: `r  round(seconds(Sys.time() - today_time), 3)` seconds_
 
-d<-edits_by_user_stage_dayhour %>%
-  ungroup() %>%
-  group_by(displayName, hour) %>%
-  arrange(desc(displayName,edits)) %>%
-  select("displayName", "hour","edits")
+This analysis could be supplemented with additional user-level data, derived from every trace of a user interaction with DHIS2. These might involve...
+
+* Metadata changes by users (dashboard creation, etc)
+* Supplemental notes entered by users, and "breaking the glass" audit logs
+* User-level audit logs of aggregate data entry and TEI registration (attributes data entry)
+* User engagement with analytics, through dashboard views and interpretations
+
+```{r footer, echo=FALSE,out.width="49%", out.height="20%",fig.cap="Institutional affiliations",fig.show='hold',fig.align='center'}
+
+knitr::include_graphics(c("https://fhi.no/contentassets/c03aa76fe30941f08474ee823ba2a928/logo_kort.png","http://eregistries.org/wp-content/uploads/2017/02/eRegistries-New-Logo.png"))
 
 
-d$edits<-as.numeric(d$edits)
+``` 
 
+Additional RMarkdown styles and options available at the [RMarkdown website](https://bookdown.org/yihui/rmarkdown/). More options for interactive HTML widgets are [available here](https://walkerke.github.io/2016/12/rmd-dropdowns/).
 
-##plotly works!!
-library(plotly)
+Template document produced by Brian O'Donnell for the eRegistries Initiative at the Norwegian Institute of Public Health. 
 
-
-#sd<-SharedData$new(d)
-#hlight<-highlight_key(sd)
-
-#dtab<-datatable(sd, caption = "Users with most frequent interactions")
-#p<-plotly::plot_ly(sd, 
-                   x=~hour,y=~displayName,z=~edits, 
-                   colorscale = "Grey", type="heatmap", autosize=TRUE)
-
-bscols(p, dtab, widths = 12)
-
-
-#gtitle_names<-gsub("[^A-Za-z0-9,;._-]","",usergroups_list)
-#gtitles_full<- paste0("usergroup_",gtitle_names,".png")
-
-#purrr::pwalk(list(gtitles_full, plots), ggsave, path = "plots", dpi = 500)
-#pwalk(list(paths, plots), ggsave, path = "plots", dpi = 300)
-
-#can we pre-select a filter in data table?? then make 
+[Visit eRegistries on the DHIS2 Community of Practice.](https://community.dhis2.org/c/subcommunities/eregistries)
