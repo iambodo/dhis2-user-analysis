@@ -1,7 +1,7 @@
 # dhis2-user-analysis
 RMarkdown script to pull and analyze user activity data from *any DHIS2 Tracker program*
 
-DHIS2 does not have user-level analytics. Instead, DHIS2 analytics is restricted to period dimension, organization unit dimension, and a data dimension (such as a data element or program indicator). Analytics therefore assumes that one user is active per organization unit. However, there are multiple users often work at a single organization unit, such as at a health clinic, making it impossible to know which user is entering data and when. Luckily, DHIS2 keeps a log of every entry of a data element into a tracker program at the */trackedentitydatavalueaudit* API endpoint, including username and timestamp, making it possible to analyze tracker activity at the **user level** with various API calls.
+DHIS2 does not have user-level analytics. Instead, DHIS2 analytics is restricted to a period dimension, an organization unit dimension, and a data dimension (such as a data element or program indicator). Analytics therefore assumes that one user is active per organization unit. However, there are often multiple users often working at a single organization unit, such as at a health clinic, making it difficult to know which users are entering data and when. Luckily, DHIS2 keeps a log of every entry of a data element into a tracker program at the */trackedentitydatavalueaudit* API endpoint, including username and timestamp, enabling analysis of tracker activity at the **user level** through various API calls.
 
 **How to Run this analysis**
 * Download R Studio: https://rstudio.com/products/rstudio/download/
@@ -14,8 +14,8 @@ DHIS2 does not have user-level analytics. Instead, DHIS2 analytics is restricted
 * When executing Knitr, the resulting output is an HTML summary of the analyses performed.
 * You can save and share the html file itself, or host it on your own server. All interactivity is client-side, so a Shiny app is not required. But be sure to keep the plots within the same folder as the HTML file, for dynamic viewing of usergroup and user files.
 
-Execution of RMarkdown script
 ![execution of script](https://vickysteeves.gitlab.io/repro-papers/img/knit.png)
+Execution of RMarkdown script in knitr
 
 Analysis routines included in the script:
 * Total users with accounts, users who logged in, users who entered tracker data
