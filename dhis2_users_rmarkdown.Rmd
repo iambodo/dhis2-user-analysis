@@ -6,7 +6,7 @@ output:
     toc_float: true
     toc_depth: 4
 params:
-  fake_displayNames: false
+  fake_displayNames: true
   save_usergroup_charts: true
   save_user_charts: true
 ---
@@ -21,7 +21,6 @@ options(encoding = "UTF-8")
 #(include https://  and last backslash of DHIS2 URL, in quotes)
 baseurl<-"https://hrhr.dhis2.org/dhis/"
 username<-"admin"
-#you will be prompted for password upon knitting the document
 
 #workhour start and end in 24 hr format, no quotes
 workhour_start<-9
@@ -35,7 +34,7 @@ startdate<- "2017-01-01"
 
 ##______Now load packages and set up_____##
 ##first load required packages
-required_packages <- c("ggplot2", "stringr","httr","jsonlite","assertthat","rlist","readr",         "tibble","plyr","tidyr","dygraphs","xts","gridExtra","cowplot","lubridate","plotly","knitr","askpass","DT","keyring","devtools")
+required_packages <- c("ggplot2","stringr","httr","jsonlite","assertthat","rlist","readr","tibble","plyr","tidyr","dygraphs","xts","gridExtra","cowplot","lubridate","plotly","knitr","askpass","DT","keyring","devtools")
 
 
 is_installed <- function(mypkg) is.element(mypkg, installed.packages()[,1])
@@ -93,7 +92,7 @@ Analyzing user-level tracker data for `r baseurl`.
 
 
 ##Description
-DHIS2 keeps a log of every entry of a data element into a tracker program at the */trackedentitydatavalueaudit* API endpoint, including username and timestamp. From these data, we can analyze user interactions with tracker data elements, referred to as *edits* in tables below. For more details on the tracker audit log, see the [DHIS2 developer guide](https://docs.dhis2.org/master/en/developer/html/dhis2_developer_manual_full.html).
+DHIS2 keeps a log of every entry of a data element into a tracker program at the *audits/trackedEntityDataValue* API endpoint, including username and timestamp. From these data, we can analyze user interactions with tracker data elements, referred to as *edits* in tables below. For more details on the tracker audit log, see the [DHIS2 developer guide](https://docs.dhis2.org/master/en/developer/html/dhis2_developer_manual_full.html).
 
 The selected date range for analysis is between **`r startdate`** and **`r enddate`**. 
 
@@ -147,6 +146,7 @@ users <- users %>%
 ```
 
 ```{r pull data by API_2, echo=FALSE, message=FALSE}
+
 #summarize tei audit data by user
 library(dplyr)
 all_audit_summary<-all_tei_audits %>%
@@ -224,7 +224,7 @@ ugroups<-as.data.frame(suppressMessages(
 Now, we can merge audit data with other metadata.
 ```{r now merge data, echo=FALSE}
 #summary merging user info
-
+library(dplyr)
 edits_by_user_stage<-all_tei_audits %>%
   left_join(psi, by = c("programStageInstance.id" = "event")) %>%
   left_join(ps, by = c("programStage" = "id")) %>%
@@ -927,10 +927,11 @@ bubble_plot_data <-sessions_by_stage %>%
   semi_join(head(top_stages_by_session, 10), by="name") %>%
   mutate("median_seconds"=median(round(session),2)) %>%
   left_join(session_summary,by="name") %>%
-  mutate("total_sessions" = sum(total_sessions)) %>%
   group_by(name,median_seconds,total_sessions) %>%
   select(name,median_seconds,total_sessions) %>%
-  distinct()
+  distinct() %>%
+  group_by(name) %>%
+  mutate("total_sessions" = sum(total_sessions))
 
 
 bubble_plot_data<-bubble_plot_data %>%
