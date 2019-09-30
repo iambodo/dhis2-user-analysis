@@ -6,7 +6,7 @@ output:
     toc_float: true
     toc_depth: 4
 params:
-  fake_displayNames: true
+  fake_displayNames: false
   save_usergroup_charts: true
   save_user_charts: true
 ---
